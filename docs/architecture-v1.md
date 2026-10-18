@@ -75,20 +75,20 @@ alef-market/
 │  ├─ settings.py        typed settings from env/.env, API key parsing
 │  ├─ logging_setup.py   console + rotating logs/app.log
 │  ├─ contracts/         ALL shared data shapes (the most important folder)
-│  ├─ data/              MarketDataSource interface, replay + ccxt sources, resample, candle store
+│  ├─ data/              MarketDataSource (base), replay + ccxt sources, store, resample, clean (gap policy), window, seed files
 │  ├─ analysis/          pure: indicators, levels, patterns, moves, why-facts
 │  ├─ backtest/          pure: rule evaluation, shared exits, engine, metrics, sizing, readback
 │  ├─ journal/           pure: trade math, behavior detectors, insight ranking, paper settlement
 │  ├─ briefing/          pure: briefing facts
-│  ├─ news/              rss.py (I/O) + lookup.py (pure)
+│  ├─ news/              rss.py (I/O: feeds, parse, backfill) + store.py (headlines table) + lookup.py (pure)
 │  ├─ llm/               gateway, providers, cache, task registry, validators, templates, prompts/
 │  ├─ auth/              password hashing, DB sessions
 │  ├─ db/                SQLite engine (WAL), table definitions
 │  ├─ services/          orchestration: one function per user action
 │  ├─ api/               routes/, deps, uniform errors, mocks for frontend work
 │  └─ web/               pages.py, templates/, static/{css,js,vendor,fonts}
-├─ scripts/              reset_demo, record_market_data, generate_persona
-├─ data/                 committed seed data: market/*.csv.gz, replay_days.json, macro_events.json, persona/
+├─ scripts/              reset_demo, probe_exchanges, record_market_data, pick_replay_days, record_headlines, generate_persona
+├─ data/                 committed seed data: market/*.csv.gz + manifest.json, news/headlines.jsonl, exchange_probe/, replay_days.json, macro_events.json, persona/
 ├─ tests/                unit/, api/, fixtures/, evals/, fakes.py, conftest.py
 ├─ var/                  runtime DB (gitignored)
 └─ logs/                 runtime logs (gitignored)
@@ -242,8 +242,8 @@ All JSON lives under `/api`. Interactive docs: `http://127.0.0.1:8000/docs`. Unl
 | `POST /api/auth/logout` | — | 204 | deletes the session row |
 | `GET /api/auth/me` | — | `UserPublic` | |
 | `GET /api/market/config` *public* | — | `MarketConfig` | pickers + replay days |
-| `GET /api/market/candles` *public* | `symbol, start_ts, end_ts, timeframe=1m` | `CandleSeries` | `start_ts <= ts < end_ts`; live polling: `start_ts = last_ts + 1` |
-| `GET /api/market/indicator` *public* | `symbol, name, period, start_ts, end_ts, timeframe` | `IndicatorSeries` | chart EMA overlay |
+| `GET /api/market/candles` *public* | `symbol, start_ts, end_ts, timeframe=1m` | `CandleSeries` | `start_ts <= ts < end_ts` (bar open time); live polling: `start_ts = last_ts + 1`; 400 if `end_ts <= start_ts` or the window is over 5,000 bars |
+| `GET /api/market/indicator` *public* | `symbol, name, period, start_ts, end_ts, timeframe` | `IndicatorSeries` | chart EMA overlay; `warmup_bars` of history before `start_ts` are loaded, so values are `None` only where no history exists; closed bars only |
 | `GET /api/market/annotations` *public* | `symbol, start_ts, as_of_ts, timeframe` | `ChartAnnotations` | levels/patterns/moves up to `as_of_ts` |
 | `GET /api/market/why` | `symbol, ts, timeframe` | `WhyExplanation` | |
 | `GET /api/briefing` | `as_of_ts?` | `Briefing` | replay: pass the replay start |
@@ -269,8 +269,8 @@ The demo flow from the frontend's side: load `config` → load the replay day's 
 |---|---|---|
 | `users` | id; username unique | accounts; `password_hash` is argon2id; `is_demo` flag |
 | `sessions` | `token_hash` (sha256 of the cookie token) | login sessions with `expires_ts`; the raw token is never stored |
-| `candles` | (exchange, symbol, timeframe, ts) | **closed** bars only: 1m (+1h/1d context). 5m is resampled from 1m, never stored (A6) |
-| `headlines` | id; url unique | RSS titles, links and times |
+| `candles` | (exchange, symbol, timeframe, ts) | **closed 1m bars only**. 5m, 1h and 1d are resampled from 1m, never stored or fetched (A6, amended by C2) |
+| `headlines` | id; url unique (canonical: `utm_*` and `#fragment` stripped) | RSS titles, links, times, symbol tags |
 | `trades` | id; index (user_id, entry_ts) | mirrors `TradeRecord` (seed + paper) |
 | `llm_cache` | `key` = sha256(prompt_id + canonical facts JSON) | validated outputs; `pinned` = hand-reviewed demo text, never overwritten |
 | `llm_calls` | id | one row per provider attempt: key alias, outcome, latency (usage counter + "who answered") |
@@ -282,15 +282,16 @@ Connection pragmas: `journal_mode=WAL` (readers don't block the writer), `foreig
 
 ### 5.2 Market data caching
 
-- **One store:** the `candles` table. `scripts/record_market_data.py` downloads real 1m bars (about 75 days, both pairs) and writes **committed** seed files `data/market/<EXCHANGE>_<BASE>-<QUOTE>_1m.csv.gz`. `make reset-demo` loads them into SQLite. A fresh laptop can rebuild everything offline.
-- **Replay days** are named windows (`data/replay_days.json`) over those stored candles; `ReplaySource` simply reads the DB up to `as_of_ts`.
-- **Live mode** is a read-through cache: `CcxtSource` fetches only the bars missing from the DB, upserts the closed ones, and reads back from the DB. The still-forming bar is returned as `CandleSeries.partial` and never stored.
+- **One store:** the `candles` table. `scripts/record_market_data.py` downloads real 1m bars (about 75 whole UTC days, both pairs) and writes **committed** seed files `data/market/<exchange>_<BASE>-<QUOTE>_1m.csv.gz` (e.g. `binance_BTC-USDT_1m.csv.gz`) plus `manifest.json`. Files are gap-free (C1) and byte-deterministic. `make reset-demo` loads them, and `data/news/headlines.jsonl`, into SQLite with no network. A fresh laptop can rebuild everything offline.
+- **Gap policy (C1):** every frame handed to the core passes `validate_frame(frame, timeframe)`. Exchange gaps of up to 5 bars are filled at the edge with flat zero-volume bars (that is what "no trades" looks like); longer gaps stop the recorder with a report, and at read time only the latest contiguous run is served (with a WARNING log).
+- **Replay days** are named windows (`data/replay_days.json`, whole UTC days chosen with `scripts/pick_replay_days.py`) over those stored candles; `ReplaySource` simply reads the DB. `candles_since`/`latest_price` return only bars closed at `as_of_ts` (`ts + step <= as_of_ts`). Replay reads the seeds of `ALEF_REPLAY_EXCHANGE` (default: `ALEF_EXCHANGE`).
+- **Live mode** is a read-through cache: `CcxtSource` fetches only the bars missing from the DB, upserts the closed ones, and reads back from the DB. The still-forming bar is returned as `CandleSeries.partial` and never stored (for 5m/1h the partial is built from the closed 1m bars of the bucket + the forming 1m bar). `MarketDataSource.get_candles` returns `CandleBatch(frame, partial)` so a poll costs one request (C3).
 
 ### 5.3 Fallback ladders (the demo must survive no internet)
 
 | Thing | Ladder | What the UI shows |
 |---|---|---|
-| Candles (live) | exchange → DB cache (`origin="cache"`, `stale=true`) → switch to replay | a "stale data" badge |
+| Candles (live) | exchange → DB cache (`origin="cache"`, `stale=true`) → switch to replay (UI action when stale and empty) | a "stale data" badge |
 | Candles (replay) | DB only (no network involved) | — |
 | Headlines | RSS → DB (replay days' headlines are seeded) | — |
 | LLM prose | key 1..n per provider → next provider → `llm_cache` → Persian template | nothing different; `meta.source` is logged |
@@ -308,7 +309,7 @@ Startup makes **no network calls**, so the app boots with Wi-Fi off. On demo day
 - **If a key leaks** (for example, committed by mistake): revoke it at the provider first, then remove it from Git history. Rotating is faster than history surgery.
 - Tests build `Settings(_env_file=None, …)`, so your real `.env` never affects them.
 
-Main settings: `env`, `log_level`, `mock_api`, `db_path`, `market_mode`, `exchange`, `llm_cache_mode`, `llm_timeout_s` (8 s), `llm_provider_order`, `*_keys`, `*_model`, `session_days`, `cookie_secure`, `display_tz`.
+Main settings: `env`, `log_level`, `mock_api`, `db_path`, `data_dir`, `market_mode`, `exchange`, `exchange_timeout_ms` (10 s), `exchange_proxy`, `replay_exchange`, `llm_cache_mode`, `llm_timeout_s` (8 s), `llm_provider_order`, `*_keys`, `*_model`, `session_days`, `cookie_secure`, `display_tz`.
 
 ---
 
@@ -326,7 +327,8 @@ Main settings: `env`, `log_level`, `mock_api`, `db_path`, `market_mode`, `exchan
 | jinja2 | server-rendered pages |
 | httpx | one HTTP client for all three LLM providers (OpenAI-compatible APIs, A10) |
 | pandas + numpy | candle frames, resampling, analytics |
-| *Week 1:* ccxt, feedparser, argon2-cffi, python-multipart | exchange data, RSS, password hashing, form posts |
+| ccxt, feedparser *(added in Chat 3)* | exchange data (public endpoints, no key), RSS/Atom parsing |
+| *Week 1:* argon2-cffi, python-multipart | password hashing, form posts |
 | *dev:* pytest, ruff, httpx2 | tests; lint + format in one tool; TestClient transport |
 
 Frontend libraries are **vendored** in `app/web/static/vendor/` (Lightweight Charts 5.2.1, HTMX 2.0.11) with the Vazirmatn font in `static/fonts/` (A16). There is no CDN and no npm at runtime. Keep Lightweight Charts' default attribution logo on, since TradingView asks for attribution; its license file is next to it.
@@ -424,9 +426,23 @@ Brief decisions D1–D16 stand. New decisions:
 | A20 | A `services/` layer is the only orchestration; the layering rule is enforced by a test | Pages and API can't drift; the core stays pure |
 | A21 | `INSIGHT_MIN_SAMPLE = 10` is enforced inside the `Insight` contract | Small-sample insights are impossible, not just discouraged |
 
+### Chat 3 decisions (Data Layer, Oct 18, 2026)
+
+| # | Decision | Why |
+|---|---|---|
+| C1 | **Gap policy:** `validate_frame(frame, timeframe)` rejects gaps/misalignment (`contract:` change); gaps of up to 5 bars are filled with flat zero-volume bars at the I/O edge; longer gaps are refused by the recorder and trimmed (latest contiguous run) at read time | Indicators and next-bar fills are silently wrong across holes; one missing minute in 108k bars must not block recording |
+| C2 | **Resample everything from 1m** (5m, 1h, 1d, UTC buckets, complete buckets only); nothing else is stored or fetched. Amends A6 | One data path, works offline, timeframes can never disagree |
+| C3 | `MarketDataSource.get_candles` returns `CandleBatch(frame, partial)`; every returned frame is strict-valid | The forming bar comes from the same exchange call; the core never sees gaps |
+| C4 | Indicators follow TradingView conventions (RSI/ATR Wilder-smoothed; RSI first value at bar `p`, ATR at `p-1`; RSI with no losses = 100), except EMA is SMA-seeded; `warmup_bars(EMA) = 3p` | Values match the chart traders compare against; the seed's weight after 3p bars is < 0.3% |
+| C5 | Headlines for past replay days via **paged RSS backfill** (`?paged=N` on WordPress feeds: CryptoSlate, Bitcoin.com News, BeInCrypto) + 4 latest-only feeds (CoinDesk, Cointelegraph, Decrypt, The Block); committed as `data/news/headlines.jsonl` | Latest-only feeds cover just 1–3 days; paged RSS is still RSS (D4), not scraping |
+| C6 | Feeds are a reviewed constant (`app/news/rss.py::FEEDS`), not a setting | Each feed was verified by hand; changing one should be a reviewed commit |
+| C7 | API windows are capped at 5,000 bars (Persian 400 above that) | A full replay day of 1m is 1,440 bars; protects the live exchange and the browser |
+| C8 | `ALEF_REPLAY_EXCHANGE` (optional) decouples the seed files' exchange from the live exchange | Recording from one exchange and going live on another at the venue must not empty the replay days |
+
 ### Open items carried forward
-- [ ] Week 0: exchange connectivity → set `ALEF_EXCHANGE` (D2)
+- [ ] Week 0: exchange connectivity → set `ALEF_EXCHANGE` (D2). Probe built (`scripts/probe_exchanges.py`); results from Mani's networks pending
 - [ ] Week 0: Persian quality test → choose the model per task in settings
-- [ ] Week 0/1: record market data and pick 3–5 replay days → `data/replay_days.json`
+- [ ] Week 0/1: record market data and pick 3–5 replay days → `data/replay_days.json`. Recorder + picker built; recording on Mani's machine pending
+- [ ] Record headlines for the seed window (`scripts/record_headlines.py`) and commit `data/news/headlines.jsonl`
 - [ ] Confirm the demo format with the organizers (D11)
 - [ ] Check each LLM provider's terms on multiple free accounts (D5)
