@@ -2,29 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from pathlib import Path
-
 import pandas as pd
 import pytest
 from sqlalchemy.orm import Session
 
 from app.contracts.frames import validate_frame
 from app.data.store import existing_ts, load_candles, stored_range, upsert_candles
-from app.db.engine import create_schema, make_engine, make_session_factory
 from tests.fixtures import load_frame
 
 M = 60_000
-
-
-@pytest.fixture
-def db(tmp_path: Path) -> Iterator[Session]:
-    engine = make_engine(tmp_path / "s.db")
-    create_schema(engine)
-    session = make_session_factory(engine)()
-    yield session
-    session.close()
-    engine.dispose()
 
 
 @pytest.fixture(scope="module")

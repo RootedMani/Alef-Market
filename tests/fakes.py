@@ -32,3 +32,44 @@ class FakeProvider:
             kind: FailureKind = item  # type: ignore[assignment]
             raise ProviderError(kind, "scripted failure")
         return item
+
+
+# ---------------------------------------------------------------------------------------
+# Market data
+# ---------------------------------------------------------------------------------------
+
+_MIN = 60_000
+
+
+@dataclass
+class FakeExchange:
+    """A ccxt-like exchange serving 1m bars from a dict, with a controllable clock.
+
+    ``bars[symbol]`` is a list of ``[ts, o, h, l, c, v]``. ``fetch_ohlcv`` returns bars with
+    ``since <= ts <= now`` (so the bar opened at ``floor(now)`` is the *forming* bar), at most
+    ``page_limit`` per call. Set ``fail`` to an exception to simulate the network dying.
+    ``calls`` records ``(symbol, since, limit)`` for every request.
+    """
+
+    bars: dict[str, list[list[float]]]
+    now_ms: int
+    id: str = "fakex"
+    page_limit: int = 1000
+    fail: Exception | None = None
+    calls: list[tuple[str, int | None, int | None]] = field(default_factory=list)
+
+    def clock(self) -> int:
+        return self.now_ms
+
+    def fetch_ohlcv(
+        self, symbol: str, timeframe: str = "1m", since: int | None = None, limit: int | None = None
+    ) -> list[list[float]]:
+        assert timeframe == "1m", "the app only ever fetches 1m"
+        self.calls.append((symbol, since, limit))
+        if self.fail is not None:
+            raise self.fail
+        n = min(limit or self.page_limit, self.page_limit)
+        visible = [b for b in self.bars.get(symbol, []) if b[0] <= self.now_ms]
+        if since is None:
+            return [list(b) for b in visible[-n:]]
+        return [list(b) for b in visible if b[0] >= since][:n]

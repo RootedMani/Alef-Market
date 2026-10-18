@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
+from app.db.engine import create_schema, make_engine, make_session_factory
 from app.main import create_app
 from app.settings import Settings
 
@@ -40,3 +42,14 @@ def mock_client(tmp_path: Path) -> Iterator[TestClient]:
     """The real app with ALEF_MOCK_API=true."""
     with TestClient(create_app(make_settings(tmp_path, mock_api=True))) as c:
         yield c
+
+
+@pytest.fixture
+def db(tmp_path: Path) -> Iterator[Session]:
+    """A session on a fresh temp SQLite DB with the full schema."""
+    engine = make_engine(tmp_path / "unit.db")
+    create_schema(engine)
+    session = make_session_factory(engine)()
+    yield session
+    session.close()
+    engine.dispose()
