@@ -15,6 +15,7 @@ dependencies = [
     "httpx>=0.27",             # one HTTP client for all LLM providers
     "pandas>=2.2",             # candle frames, resampling, analytics
     "numpy>=2.0",              # vector math under pandas
+    "ccxt>=4.4",
 ]
 # Added in the week they are needed (Week 1): ccxt, feedparser, argon2-cffi, python-multipart.
 
