@@ -48,5 +48,19 @@ def check_exit(
     exit_signal: bool = False,
     time_exit_bars: int | None = None,
 ) -> ExitDecision | None:
-    """Return how ``position`` exits on ``bar``, or None if it stays open. Planned: Week 2."""
-    raise NotImplementedError("Week 2: golden tests first (stop, target, both, gap, time)")
+    """Return how ``position`` exits on ``bar``, or None if it stays open.
+
+    ``position.bars_held`` counts the bars the position has been open **including** ``bar``
+    (1 on the entry bar). Price exits (stop, target) happen inside the bar and win over a
+    signal or time exit, which are only decided on the bar's close.
+    """
+    stop, target = position.stop_price, position.target_price
+    if stop is not None and bar.low <= stop:
+        return ExitDecision("stop", bar.open if bar.open < stop else stop)
+    if target is not None and bar.high >= target:
+        return ExitDecision("target", bar.open if bar.open > target else target)
+    if exit_signal:
+        return ExitDecision("signal", None, pending_market_exit=True)
+    if time_exit_bars is not None and position.bars_held >= time_exit_bars:
+        return ExitDecision("time", None, pending_market_exit=True)
+    return None
