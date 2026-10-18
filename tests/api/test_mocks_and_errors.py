@@ -15,10 +15,20 @@ from app.contracts.common import ApiError
 from app.contracts.journal import JournalSummary, SizeQuote, TradeRecord
 from app.contracts.market import CandleSeries, IndicatorSeries, MarketConfig
 from app.contracts.strategy import ParseResult
+from app.services.demo import ensure_demo_user
 
 STRATEGY = mocks.parse_result().model_dump(mode="json")["strategy"]
 RANGE = {"symbol": "BTC/USDT", "start_ts": 0, "end_ts": 1}
 BUILT = {"/api/market/config", "/api/market/candles", "/api/market/indicator"}
+# Chat 5: paper trades + journal (tests/api/test_trades_api.py), /me via the demo-user stand-in
+BUILT_CHAT5 = {
+    "/api/auth/me",
+    "/api/trades/size",
+    "/api/trades",
+    "/api/trades/151/close",
+    "/api/trades/sync",
+    "/api/journal",
+}
 
 CASES: list[tuple[str, str, dict | None, dict | None, object]] = [
     ("GET", "/api/auth/me", None, None, UserPublic),
@@ -77,10 +87,13 @@ def test_mock_responses_match_contracts(
 def test_unbuilt_endpoints_return_persian_501(
     client: TestClient, method: str, url: str, params, body, model
 ) -> None:
-    if url == "/api/trades/size":
-        pytest.skip("size calculator is planned for Week 2; becomes 200 then")
     if url in BUILT:
         pytest.skip("built in Chat 3; real behaviour is tested in tests/api/test_market_api.py")
+    if url in BUILT_CHAT5:
+        pytest.skip("built in Chat 5; real behaviour is tested in tests/api/test_trades_api.py")
+    with client.app.state.session_factory() as db:  # a logged-in user, so 501 isn't masked by 401
+        ensure_demo_user(db)
+        db.commit()
     res = _call(client, method, url, params, body)
     assert res.status_code == 501, res.text
     err = ApiError.model_validate(res.json())

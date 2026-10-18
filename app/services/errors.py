@@ -13,3 +13,21 @@ class InvalidRequest(ValueError):
         super().__init__(detail)
         self.detail = detail
         self.message_fa = message_fa
+
+
+class NotFound(LookupError):
+    """The thing doesn't exist or belongs to another user (HTTP 404, same message for both)."""
+
+    def __init__(self, detail: str, message_fa: str = "پیدا نشد.") -> None:
+        super().__init__(detail)
+        self.detail = detail
+        self.message_fa = message_fa
+
+
+class Conflict(RuntimeError):
+    """The request clashes with the current state, e.g. closing a closed trade (HTTP 409)."""
+
+    def __init__(self, detail: str, message_fa: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
+        self.message_fa = message_fa

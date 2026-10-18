@@ -8,6 +8,7 @@ from sqlalchemy import text
 from app import __version__
 from app.api.deps import DbDep, SettingsDep
 from app.contracts.common import Health
+from app.services.demo import restore_demo
 
 router = APIRouter(tags=["system"])
 
@@ -31,8 +32,8 @@ def health(settings: SettingsDep, db: DbDep) -> Health:
 
 
 @router.post("/demo/reset", status_code=204)
-def reset_demo(settings: SettingsDep) -> None:
-    """Restore Sara's seeded state (deletes paper trades). Disabled outside dev/demo."""
+def reset_demo(settings: SettingsDep, db: DbDep) -> None:
+    """Restore Sara's seeded state (deletes her paper trades). Disabled outside dev/demo."""
     if settings.env not in ("dev", "demo"):
         raise HTTPException(status_code=403)
-    raise NotImplementedError("Week 3: call scripts/reset_demo.py logic")
+    restore_demo(db, settings)

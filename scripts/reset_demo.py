@@ -1,9 +1,9 @@
 """Rebuild the local database to the known demo state. Makes no network calls.
 
-Today: deletes the DB file, creates the schema, loads every seed file in
-``data/market/*.csv.gz`` into ``candles`` and ``data/news/headlines.jsonl`` into
-``headlines``. Later chats add: the demo user "sara", her seeded trades, pinned LLM cache
-entries.
+Deletes the DB file, creates the schema, loads every seed file in ``data/market/*.csv.gz``
+into ``candles`` and ``data/news/headlines.jsonl`` into ``headlines``, then creates the demo
+user "sara" with her seeded trades from ``data/persona/sara_trades.json``. Later chats add:
+Sara's password, pinned LLM cache entries.
 
 Run: ``make reset-demo`` (or ``uv run python -m scripts.reset_demo``).
 """
@@ -17,6 +17,7 @@ from app.db.engine import create_schema, make_engine, make_session_factory, sess
 from app.logging_setup import setup_logging
 from app.news.rss import read_jsonl
 from app.news.store import upsert_headlines
+from app.services.demo import restore_demo
 from app.settings import get_settings
 
 logger = logging.getLogger("reset_demo")
@@ -37,6 +38,7 @@ def reset() -> None:
         loaded = load_seed_dir(session, market_dir)
         headlines = read_jsonl(headlines_path)
         n_headlines = upsert_headlines(session, headlines, fetched_ts=0)
+        n_trades = restore_demo(session, settings)
     engine.dispose()
     if not headlines:
         logger.warning("no %s: 'why' will find no news offline", headlines_path)
@@ -51,11 +53,12 @@ def reset() -> None:
             settings.replay_source_exchange,
         )
     logger.info(
-        "demo database reset at %s (%d bars from %d seed files, %d headlines)",
+        "demo database reset at %s (%d bars from %d seed files, %d headlines, %d Sara trades)",
         settings.db_path,
         sum(loaded.values()),
         len(loaded),
         n_headlines,
+        n_trades,
     )
 
 

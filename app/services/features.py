@@ -13,6 +13,7 @@ from app.contracts.briefing import Briefing
 from app.contracts.common import Symbol, Timeframe, TimestampMs
 from app.contracts.journal import JournalSummary, OpenTradeRequest, TradeRecord
 from app.contracts.strategy import EditRequest, ParseRequest, ParseResult
+from app.services import journal, trades
 from app.settings import Settings
 
 
@@ -43,21 +44,21 @@ def run_backtest(
 def open_trade(
     db: Session, settings: Settings, req: OpenTradeRequest, *, user_id: int
 ) -> TradeRecord:
-    raise NotImplementedError("Week 3")
+    return trades.open_trade(db, settings, req, user_id=user_id)
 
 
 def close_trade(
     db: Session, settings: Settings, trade_id: int, *, as_of_ts: TimestampMs | None, user_id: int
 ) -> TradeRecord:
-    raise NotImplementedError("Week 3")
+    return trades.close_trade(db, settings, trade_id, as_of_ts=as_of_ts, user_id=user_id)
 
 
 def sync_trades(
     db: Session, settings: Settings, *, as_of_ts: TimestampMs | None, user_id: int
 ) -> list[TradeRecord]:
     """Settle every open trade whose stop/target was hit by ``as_of_ts``."""
-    raise NotImplementedError("Week 3")
+    return trades.sync_trades(db, settings, as_of_ts=as_of_ts, user_id=user_id)
 
 
 def get_journal(db: Session, settings: Settings, *, user_id: int) -> JournalSummary:
-    raise NotImplementedError("Week 3")
+    return journal.get_journal(db, settings, user_id=user_id)
