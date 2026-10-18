@@ -16,11 +16,13 @@ from app.data.clean import GapTooLongError
 from app.data.seed import load_seed_dir, parse_seed_name, read_seed, seed_name, write_seed
 from app.data.store import load_candles, stored_range
 from app.db.engine import make_engine, make_session_factory
+from app.news.rss import parse_feed, write_jsonl
+from app.news.store import load_headlines
 from scripts import reset_demo
 from scripts.record_market_data import download, record_symbol
 from tests.conftest import make_settings
 from tests.fakes import FakeExchange
-from tests.fixtures import load_frame
+from tests.fixtures import FIXTURES, load_frame
 
 M = 60_000
 
@@ -111,6 +113,8 @@ def test_reset_demo_loads_seeds_with_network_disabled(
     data = tmp_path / "data"
     write_seed(data / "market", "binance", "BTC/USDT", walk)
     write_seed(data / "market", "binance", "ETH/USDT", walk)
+    rss = (FIXTURES / "rss" / "wp_page1.xml").read_bytes()
+    write_jsonl(data / "news" / "headlines.jsonl", parse_feed(rss, "TestSlate"))
     settings = make_settings(tmp_path, data_dir=data, exchange="binance")
     monkeypatch.setattr(reset_demo, "get_settings", lambda: settings)
 
@@ -125,4 +129,5 @@ def test_reset_demo_loads_seeds_with_network_disabled(
     with make_session_factory(engine)() as s:
         for sym in ("BTC/USDT", "ETH/USDT"):
             assert len(load_candles(s, "binance", sym, "1m", 0, 2**62)) == 600  # type: ignore[arg-type]
+        assert len(load_headlines(s, 0, 2**62)) == 3
     engine.dispose()

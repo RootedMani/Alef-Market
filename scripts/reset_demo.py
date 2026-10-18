@@ -1,9 +1,9 @@
 """Rebuild the local database to the known demo state. Makes no network calls.
 
-Today: deletes the DB file, creates the schema and loads every seed file in
-``data/market/*.csv.gz`` into the ``candles`` table.
-Later chats add: cached headlines, the demo user "sara", her seeded trades, pinned LLM
-cache entries.
+Today: deletes the DB file, creates the schema, loads every seed file in
+``data/market/*.csv.gz`` into ``candles`` and ``data/news/headlines.jsonl`` into
+``headlines``. Later chats add: the demo user "sara", her seeded trades, pinned LLM cache
+entries.
 
 Run: ``make reset-demo`` (or ``uv run python -m scripts.reset_demo``).
 """
@@ -15,6 +15,8 @@ import logging
 from app.data.seed import load_seed_dir, parse_seed_name
 from app.db.engine import create_schema, make_engine, make_session_factory, session_scope
 from app.logging_setup import setup_logging
+from app.news.rss import read_jsonl
+from app.news.store import upsert_headlines
 from app.settings import get_settings
 
 logger = logging.getLogger("reset_demo")
@@ -30,9 +32,14 @@ def reset() -> None:
     create_schema(engine)
 
     market_dir = settings.data_dir / "market"
+    headlines_path = settings.data_dir / "news" / "headlines.jsonl"
     with session_scope(make_session_factory(engine)) as session:
         loaded = load_seed_dir(session, market_dir)
+        headlines = read_jsonl(headlines_path)
+        n_headlines = upsert_headlines(session, headlines, fetched_ts=0)
     engine.dispose()
+    if not headlines:
+        logger.warning("no %s: 'why' will find no news offline", headlines_path)
 
     if not loaded:
         logger.warning("no seed files in %s: replay mode will have no candles", market_dir)
@@ -44,10 +51,11 @@ def reset() -> None:
             settings.replay_source_exchange,
         )
     logger.info(
-        "demo database reset at %s (%d bars from %d seed files)",
+        "demo database reset at %s (%d bars from %d seed files, %d headlines)",
         settings.db_path,
         sum(loaded.values()),
         len(loaded),
+        n_headlines,
     )
 
 

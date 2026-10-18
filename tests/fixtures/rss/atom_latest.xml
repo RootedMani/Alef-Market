@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>TestDesk</title>
+  <id>urn:testdesk</id>
+  <updated>2026-10-01T14:30:00Z</updated>
+  <entry>
+    <title>  اتریوم   پس از به‌روزرسانی بالا رفت  </title>
+    <link href="https://testdesk.example/eth-upgrade"/>
+    <id>urn:1</id>
+    <updated>2026-10-01T14:30:00Z</updated>
+  </entry>
+</feed>

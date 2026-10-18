@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+  <title>TestSlate</title><link>https://testslate.example/</link><description>fixture page 2</description>
+  <item>
+    <title>BTC miners sell as hashprice drops</title>
+    <link>https://testslate.example/miners/</link>
+    <pubDate>Wed, 30 Sep 2026 22:10:00 +0000</pubDate>
+  </item>
+  <item>
+    <title>Bitcoin jumps 3% as ETF inflows return</title>
+    <link>https://testslate.example/btc-jumps/?utm_campaign=x#comments</link>
+    <pubDate>Thu, 01 Oct 2026 14:05:00 +0000</pubDate>
+  </item>
+</channel>
+</rss>

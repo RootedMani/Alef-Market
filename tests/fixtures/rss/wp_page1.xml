@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+<channel>
+  <title>TestSlate</title><link>https://testslate.example/</link><description>fixture page 1</description>
+  <item>
+    <title>Bitcoin jumps 3% as ETF inflows return</title>
+    <link>https://testslate.example/btc-jumps/?utm_source=rss&amp;utm_medium=rss</link>
+    <pubDate>Thu, 01 Oct 2026 14:05:00 +0000</pubDate>
+  </item>
+  <item>
+    <title>Ether &amp; Solana lead altcoin rebound</title>
+    <link>https://testslate.example/eth-sol/</link>
+    <pubDate>Thu, 01 Oct 2026 13:40:00 +0000</pubDate>
+  </item>
+  <item>
+    <title>Regulators meet together on stablecoin rules</title>
+    <link>https://testslate.example/stablecoins/</link>
+    <pubDate>Thu, 01 Oct 2026 12:00:00 +0000</pubDate>
+  </item>
+  <item>
+    <title>An item with no date is skipped</title>
+    <link>https://testslate.example/no-date/</link>
+  </item>
+</channel>
+</rss>
