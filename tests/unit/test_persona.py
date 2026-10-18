@@ -26,6 +26,7 @@ from scripts.generate_persona import (
     Intent,
     generate_control,
     generate_sara,
+    hypothetical_demo_pair,
     persona_doc,
     simulate,
     synthetic_prices,
@@ -203,3 +204,13 @@ def test_controls_are_not_vacuous(controls) -> None:
         assert len(facts) >= 5
         tested |= {f.key for f in facts}
     assert {"after_losses", "after_wins", "revenge_trade", "overtrading", "bad_hour"} <= tested
+
+
+@pytest.mark.parametrize("demo_wins", [False, True])
+def test_cards_survive_the_stage_trade_whichever_way_it_goes(sara, demo_wins: bool) -> None:
+    _, trades = sara
+    sample = [*trades, *hypothetical_demo_pair(trades, demo_wins=demo_wins)]
+    summary = summarize(sample, tz="Asia/Tehran")
+    assert {c.key for c in summary.insights} == PLANTED
+    revenge = next(c for c in summary.insights if c.key == "revenge_trade")
+    assert revenge.highlighted
