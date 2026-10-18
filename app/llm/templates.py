@@ -66,14 +66,15 @@ def insight_template(facts: InsightFacts) -> str:
                 f"در روزهایی که {_n(p['heavy_min_trades'])} معامله یا بیشتر انجام دادی "
                 f"({days} روز)، "
                 f"{rate}% معامله‌ها ضرر داده‌اند؛ در روزهای دیگر {base}% {_sample(facts)}. "
-                f"{_n(p['heavy_days_negative'])} روز از این {days} روز با زیان تمام شد."
             )
+            if p["heavy_days_negative"] == p["heavy_days"]:
+                text += f"همهٔ این {days} روز با زیان تمام شد."
+            else:
+                text += f"{_n(p['heavy_days_negative'])} روز از این {days} روز با زیان تمام شد."
             started = p.get("heavy_days_started_with_wins", 0)
             if started and 2 * started >= p["heavy_days"]:
-                text += (
-                    f" {_n(started)} روز از آن‌ها با {_n(p['start_streak_n'])} سود پشت‌سرهم "
-                    "شروع شده بود."
-                )
+                who = "همهٔ آن‌ها" if started == p["heavy_days"] else f"{_n(started)} روز از آن‌ها"
+                text += f" {who} با {_n(p['start_streak_n'])} سود پشت‌سرهم شروع شده بود."
             return text
         case "bad_hour":
             return (

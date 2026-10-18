@@ -1,7 +1,7 @@
 """The insight-selection rule: which tested groups become cards.
 
 Gates (all must pass): >= 10 trades in the group, >= 10 other trades, a loss-rate gap of
->= 15 percentage points, and a one-sided Fisher exact p-value <= 0.05 / (number of tests run)
+>= 15 percentage points, and a one-sided Fisher exact p-value <= 0.005 / (number of tests run)
 (Bonferroni). Then one card per detector, no two cards sharing most of their trades,
 ranked by the gap, top 3.
 """
@@ -51,7 +51,7 @@ STRONG = fact("bad_hour", 20, 17, 130, 52, hour=15)  # 85% vs 40%
 
 
 def test_a_strong_pattern_passes() -> None:
-    assert STRONG.p_value < FAMILY_ALPHA / 20  # ~0.00016
+    assert STRONG.p_value < FAMILY_ALPHA / 20  # ~0.00016 < 0.00025
     assert passes_gate(STRONG, n_tests=20)
     assert select_findings([STRONG]) == [STRONG]
 
@@ -73,13 +73,14 @@ def test_group_and_baseline_need_ten_trades_each() -> None:
 
 
 def test_bonferroni_more_tests_mean_a_stricter_cutoff() -> None:
-    # 12 trades, 9 losses vs 60 others with 24 losses: 75% vs 40%, p ~ 0.02
-    f = fact("bad_hour", 12, 9, 60, 24, hour=15)
+    # 14 trades, 12 losses vs 60 others with 24 losses: 86% vs 40%, p ~ 0.0021
+    f = fact("bad_hour", 14, 12, 60, 24, hour=15)
+    assert FAMILY_ALPHA == 0.005
     assert FAMILY_ALPHA / 10 < f.p_value < FAMILY_ALPHA
     assert passes_gate(f, n_tests=1)
     assert not passes_gate(f, n_tests=10)
     noise = [fact("bad_hour", 12, 5, 60, 24, hour=h) for h in range(9)]
-    assert select_findings([f, *noise]) == []  # 10 tests were run -> cutoff 0.005
+    assert select_findings([f, *noise]) == []  # 10 tests were run -> cutoff 0.0005
 
 
 def test_one_card_per_detector_keeps_the_biggest_gap() -> None:

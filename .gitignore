@@ -28,3 +28,6 @@ build/
 .idea/
 .DS_Store
 Thumbs.db
+
+# synthetic stand-in prices (scripts/make_synthetic_market.py); never commit
+data/market/synthetic_*

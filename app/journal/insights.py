@@ -6,9 +6,13 @@ A fact is shown only if it passes ALL four gates:
 2. **Big enough to matter (effect size):** the group's loss rate is at least
    ``MIN_LIFT_PP`` = 15 percentage points above the other trades' loss rate.
 3. **Unlikely to be luck (significance):** one-sided Fisher exact p-value ...
-4. **... corrected for multiple comparisons (Bonferroni):** ``p <= 0.05 / n_tests``, where
+4. **... corrected for multiple comparisons (Bonferroni):** ``p <= 0.005 / n_tests``, where
    ``n_tests`` is the number of groups actually tested for this user (every detector, every
    hour). Testing 20 things at 5% finds one "pattern" by luck; this cutoff prevents that.
+   Measured on 1,000 pattern-free control datasets (``scripts/measure_false_positives.py``):
+   a family alpha of 0.05 let 2.4% of them show a false card, 0.01 let 0.4%, 0.005 lets
+   0.1%. We use 0.005: at most 1 honest trader in ~200 (measured: 1 in 1,000) sees a false
+   card.
 
 Then: one card per detector (the biggest gap), no two cards that share most of their trades
 (Jaccard overlap > 0.5 means it's the same habit counted twice; the bigger gap stays),
@@ -22,7 +26,7 @@ from app.contracts.journal import INSIGHT_MIN_SAMPLE, Insight, InsightFacts, Ins
 from app.journal.detectors import MIN_OTHERS
 
 MIN_LIFT_PP = 15.0
-FAMILY_ALPHA = 0.05
+FAMILY_ALPHA = 0.005
 MAX_OVERLAP = 0.5
 MAX_CARDS = 3
 
