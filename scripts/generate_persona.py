@@ -115,6 +115,10 @@ def seed_file_prices(market_dir: Path, exchange: str) -> Prices:
     return Prices(frames=frames, label=exchange, files=files)
 
 
+class NoRoomForFinalLoss(ValueError):
+    """This seed's prices give no clear loss ending 8 minutes before the demo trade."""
+
+
 # ---------- one trade ----------
 
 
@@ -132,6 +136,9 @@ class Intent:
     emotion: Emotion | None = None
     use_stop: bool = True
     close_at: int | None = None  # force the manual close time (the final demo-day loss)
+    max_r: float | None = None  # a wanted loss must also be at most this many R
+    strict: bool = False  # no candidate with the wanted outcome -> no trade (not a fallback)
+    min_exit_ts: int | None = None  # the exit must not happen before this
 
 
 def simulate(prices: Prices, intent: Intent, entry_ts: int, equity: float) -> TradeRecord:
@@ -177,9 +184,16 @@ def place(prices: Prices, intent: Intent, equity: float, rng: random.Random) -> 
         for ts in rng.sample(minutes, min(MAX_TRIES, len(minutes))):
             rec = simulate(prices, candidate, ts, equity)
             first = first or rec
-            if ((to_view(rec).pnl or 0.0) <= 0) == intent.want_loss:
+            view = to_view(rec)
+            if ((view.pnl or 0.0) <= 0) != intent.want_loss:
+                continue
+            if intent.min_exit_ts is not None and (rec.exit_ts or 0) < intent.min_exit_ts:
+                continue
+            if intent.max_r is None or (
+                view.r_multiple is not None and view.r_multiple <= intent.max_r
+            ):
                 return rec
-    return first
+    return None if intent.strict else first
 
 
 # ---------- calendar helpers ----------
@@ -268,6 +282,10 @@ def generate_sara(
 ) -> tuple[list[TradeRecord], dict]:
     """Sara's trades (closed, entry order, ids 1..N) and a summary of what was planted."""
     rng = random.Random(seed)
+    if demo_entry_ts is not None and not (
+        prices.start_ts + days * 86_400_000 < demo_entry_ts <= prices.end_ts - 6 * 3_600_000
+    ):
+        raise ValueError("demo_entry_ts must leave 60 days before it and 6 h of prices after it")
     end = demo_entry_ts if demo_entry_ts is not None else prices.end_ts
     all_days = tehran_days(prices.start_ts + 2 * 3_600_000, end)
     if demo_entry_ts is not None:  # the demo day itself only gets the final loss
@@ -391,14 +409,18 @@ def generate_sara(
         final = _intent(
             rng,
             "final",
-            close_at - 40 * M,
+            max(close_at - 120 * M, book.last_exit + M),
             close_at - 10 * M,
             want_loss=True,
             hold=40,
             emotion="calm",
         )
         final.close_at = close_at
-        book.add(place(prices, final, book.equity, rng))
+        final.max_r = -0.5  # a clear loss, so 'opened 8 minutes after a loss' is fair
+        final.strict = True
+        final.min_exit_ts = close_at - M  # closed right before the demo, not earlier
+        if book.add(place(prices, final, book.equity, rng)) is None:
+            raise NoRoomForFinalLoss(f"seed {seed}: no clear loss fits before the demo trade")
     trades = [t.model_copy(update={"id": i}) for i, t in enumerate(book.trades, start=1)]
     return trades, planted
 
@@ -483,7 +505,10 @@ def generate_accepted(
     designed persona to ship (recorded in the file's meta). Control data never searches.
     """
     for k in range(MAX_SEED_TRIES):
-        trades, planted = generate_sara(prices, seed=seed + k, demo_entry_ts=demo_entry_ts)
+        try:
+            trades, planted = generate_sara(prices, seed=seed + k, demo_entry_ts=demo_entry_ts)
+        except NoRoomForFinalLoss:
+            continue
         if clean_top_three(trades):
             return trades, planted, seed + k
     raise RuntimeError(f"no clean persona in {MAX_SEED_TRIES} seeds from {seed}")
@@ -528,12 +553,19 @@ def generate_control(prices: Prices, *, seed: int, days: int = DAYS) -> list[Tra
 # ---------- output ----------
 
 
-def persona_doc(trades: list[TradeRecord], planted: dict, prices: Prices, seed: int) -> dict:
+def persona_doc(
+    trades: list[TradeRecord],
+    planted: dict,
+    prices: Prices,
+    seed: int,
+    demo_entry_ts: int | None = None,
+) -> dict:
     return {
         "meta": {
             "persona": "sara",
             "generator": "scripts/generate_persona.py",
             "seed": seed,
+            "demo_entry_ts": demo_entry_ts,
             "prices": prices.label,
             "price_files": prices.files,
             "window": [trades[0].entry_ts, trades[-1].exit_ts] if trades else None,
@@ -577,7 +609,7 @@ def main() -> None:
         prices, seed=args.seed, demo_entry_ts=args.demo_entry_ts
     )
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    doc = persona_doc(trades, planted, prices, seed)
+    doc = persona_doc(trades, planted, prices, seed, args.demo_entry_ts)
     doc["meta"]["seed_searched_from"] = args.seed
     text = json.dumps(doc, ensure_ascii=False, indent=1)
     args.out.write_text(text + "\n", encoding="utf-8")

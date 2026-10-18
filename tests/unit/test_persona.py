@@ -159,13 +159,22 @@ def test_generator_is_deterministic(prices) -> None:
     )
 
 
-def test_demo_anchor_ends_history_with_a_loss_just_before_the_demo_trade(prices) -> None:
-    demo_ts = prices.end_ts - 12 * 3_600_000  # noon-ish on the last day of prices
-    trades, _ = generate_sara(prices, seed=SEED, demo_entry_ts=demo_ts)
+def test_committed_persona_is_exactly_what_the_generator_makes(sara, prices) -> None:
+    meta, trades = sara
+    if meta["prices"] != "synthetic":
+        pytest.skip("persona was generated on real seed files")
+    again, planted = generate_sara(prices, seed=meta["seed"], demo_entry_ts=meta["demo_entry_ts"])
+    assert again == trades and planted == meta["planted"]
+
+
+def test_history_ends_with_a_clear_loss_8_minutes_before_the_demo_trade(sara) -> None:
+    meta, trades = sara
+    demo_ts = meta["demo_entry_ts"]
+    assert demo_ts is not None
     last = max(trades, key=lambda t: t.exit_ts or 0)
-    assert (to_view(last).pnl or 0) < 0
-    assert demo_ts - 40 * M <= (last.exit_ts or 0) <= demo_ts - 8 * M
-    assert all((t.exit_ts or 0) <= demo_ts - 8 * M for t in trades)
+    assert last.exit_ts == demo_ts - 8 * M
+    assert (to_view(last).r_multiple or 0) <= -0.5
+    assert all(t.entry_ts < demo_ts for t in trades)
 
 
 # ---------- control datasets ----------
