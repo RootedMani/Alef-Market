@@ -17,6 +17,7 @@ dependencies = [
     "numpy>=2.0",              # vector math under pandas
     "ccxt>=4.4",
     "feedparser>=6.0",
+    "tzdata>=2024.1",          # Asia/Tehran on any OS (Windows has no system tz database)
 ]
 # Added in the week they are needed (Week 1): ccxt, feedparser, argon2-cffi, python-multipart.
 
