@@ -201,15 +201,23 @@ JournalStats(n_trades, win_rate_pct?, avg_win?, avg_loss?, expectancy_r?, total_
              profit_factor?, equity)
 BreakdownRow(key, n_trades, win_rate_pct?, pnl)
 Evidence(label_fa, value, unit: pct|count|r|usdt|min|hour)
+InsightFacts(key, sample_size, losses, rate_pct, baseline_n, baseline_losses, baseline_pct?,
+             lift_pp, p_value, evidence, trade_ids, params: dict[str, float])
+             # one tested group vs the user's OTHER trades; input of the insight prompt
 Insight(key: after_losses|after_wins|revenge_trade|overtrading|bad_hour|no_stop, title_fa,
         text: Narrative, evidence (>=1), sample_size (>= INSIGHT_MIN_SAMPLE = 10),
-        baseline_pct?, effect_size, trade_ids, highlighted)
+        rate_pct?, baseline_pct? (loss rate of the OTHER trades), effect_size (gap in
+        percentage points), trade_ids, highlighted)
+TradeReviewFacts(trade_id, symbol, entry_price, exit_price, exit_reason, pnl, pnl_pct,
+                 r_multiple?, holding_min, minutes_after_loss?, size_vs_avg, matched: [InsightKey])
 TradeReview(trade_id, r_multiple?, exit_reason, nearest_level_note_fa?, narrative)
 JournalSummary(stats, equity_curve, by_hour (Tehran), by_weekday, trades (newest first),
                insights (max 3), latest_review?)
 ```
 
 `sample_size >= 10` is part of the **contract**: an insight on a small sample cannot even be constructed.
+
+**Rates are loss rates** (`pnl <= 0` counts as a loss; with fees an exact 0 never happens), and a group is always compared with the user's *other* trades, not with the overall rate that already contains the group. Which facts become cards is decided in `journal/insights.py` (§10, J-decisions).
 
 ### 3.7 Briefing, news, auth
 

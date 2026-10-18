@@ -398,8 +398,9 @@ def journal() -> JournalSummary:
                     Evidence(label_fa="تعداد نمونه", value=25, unit="count"),
                 ],
                 sample_size=25,
-                baseline_pct=55.6,
-                effect_size=0.62,
+                rate_pct=68.0,
+                baseline_pct=41.0,
+                effect_size=27.0,
                 trade_ids=[151],
                 highlighted=True,
             )

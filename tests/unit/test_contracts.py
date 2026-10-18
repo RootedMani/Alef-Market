@@ -154,3 +154,26 @@ def test_insight_below_min_sample_is_impossible() -> None:
             sample_size=INSIGHT_MIN_SAMPLE - 1,
             effect_size=1.0,
         )
+
+
+def test_insight_facts_and_review_facts_are_strict() -> None:
+    from app.contracts.journal import InsightFacts, TradeReviewFacts
+
+    facts = InsightFacts(
+        key="bad_hour",
+        sample_size=12,
+        losses=10,
+        rate_pct=83.3,
+        baseline_n=40,
+        baseline_losses=16,
+        baseline_pct=40.0,
+        lift_pp=43.3,
+        p_value=0.004,
+        evidence=[Evidence(label_fa="نرخ ضرر", value=83.3, unit="pct")],
+        params={"hour": 15},
+    )
+    assert InsightFacts.model_validate_json(facts.model_dump_json()) == facts
+    with pytest.raises(ValidationError):
+        InsightFacts.model_validate({**facts.model_dump(), "p_value": 1.5})
+    with pytest.raises(ValidationError):
+        TradeReviewFacts.model_validate({"trade_id": 1, "verdict": "bad"})
