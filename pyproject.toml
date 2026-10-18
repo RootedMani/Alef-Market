@@ -1,0 +1,53 @@
+[project]
+name = "alef-market"
+version = "0.1.0"
+description = "Persian-first AI copilot for crypto day-traders (decision support, not financial advice)."
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+# Every runtime dependency is justified in docs/architecture-v1.md, section 7.
+dependencies = [
+    "fastapi>=0.115",          # HTTP API + OpenAPI docs at /docs
+    "uvicorn>=0.30",           # ASGI server that runs FastAPI
+    "pydantic>=2.8",           # contracts + validation of all LLM output
+    "pydantic-settings>=2.4",  # typed settings loaded from .env
+    "sqlalchemy>=2.0",         # SQLite access with typed table classes
+    "jinja2>=3.1",             # server-rendered HTML pages
+    "httpx>=0.27",             # one HTTP client for all LLM providers
+    "pandas>=2.2",             # candle frames, resampling, analytics
+    "numpy>=2.0",              # vector math under pandas
+]
+# Added in the week they are needed (Week 1): ccxt, feedparser, argon2-cffi, python-multipart.
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.13.1",          # transport for FastAPI TestClient (Starlette 1.x)
+    "pytest>=8.3",
+    "ruff>=0.6",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["app/web/static"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = [
+    "RUF001",  # Persian text legitimately contains characters ruff calls "ambiguous"
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers -m 'not live'"
+markers = [
+    "live: calls real external APIs (LLM providers, exchanges). Run manually: pytest -m live",
+]
+filterwarnings = ["error::DeprecationWarning:app.*"]

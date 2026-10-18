@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}الف مارکت{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='css/app.css') }}">
+  <script src="{{ url_for('static', path='vendor/htmx-2.0.11.min.js') }}" defer></script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="topbar">
+    <strong class="brand">الف مارکت</strong>
+    <span class="badge" id="mode-badge">{{ 'بازپخش' if mode == 'replay' else 'زنده' }}</span>
+    {% if mock_api %}<span class="badge badge-warn">دادهٔ نمونه</span>{% endif %}
+  </header>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="disclaimer">
+    این ابزار فقط برای پشتیبانی از تصمیم است و توصیهٔ مالی یا پیشنهاد خرید و فروش نیست.
+    <span class="version">v{{ version }}</span>
+  </footer>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
