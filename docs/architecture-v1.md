@@ -87,7 +87,7 @@ alef-market/
 │  ├─ services/          orchestration: one function per user action
 │  ├─ api/               routes/, deps, uniform errors, mocks for frontend work
 │  └─ web/               pages.py, templates/, static/{css,js,vendor,fonts}
-├─ scripts/              reset_demo, probe_exchanges, record_market_data, pick_replay_days, record_headlines, generate_persona
+├─ scripts/              reset_demo, probe_exchanges, record_market_data, pick_replay_days, record_headlines, generate_persona, make_synthetic_market, measure_false_positives
 ├─ data/                 committed seed data: market/*.csv.gz + manifest.json, news/headlines.jsonl, exchange_probe/, replay_days.json, macro_events.json, persona/
 ├─ tests/                unit/, api/, fixtures/, evals/, fakes.py, conftest.py
 ├─ var/                  runtime DB (gitignored)
@@ -259,11 +259,11 @@ All JSON lives under `/api`. Interactive docs: `http://127.0.0.1:8000/docs`. Unl
 | `POST /api/backtest/edit` | `EditRequest` | `ParseResult` | "make the stop 2%" |
 | `POST /api/backtest/run` | `BacktestRequest` | `BacktestResult` | saved to `backtest_runs` |
 | `POST /api/trades/size` *public* | `SizeRequest` | `SizeQuote` | pure; call on every input change |
-| `POST /api/trades` | `OpenTradeRequest` | `TradeRecord` (201) | fills at the price at `as_of_ts` |
-| `POST /api/trades/{id}/close` | `AsOfRequest` | `TradeRecord` | manual close |
-| `POST /api/trades/sync` | `AsOfRequest` | `list[TradeRecord]` | trades that closed by `as_of_ts` (stop/target) |
-| `GET /api/journal` | — | `JournalSummary` | |
-| `POST /api/demo/reset` | — | 204 | only when `env` is dev or demo |
+| `POST /api/trades` | `OpenTradeRequest` | `TradeRecord` (201) | fills at the last closed 1m close at `as_of_ts` + slippage; size from `size_position` on current equity; 400 if replay and no `as_of_ts` or no price yet |
+| `POST /api/trades/{id}/close` | `AsOfRequest` | `TradeRecord` | manual close at the last closed close; if the stop/target was hit earlier, that exit is returned instead; 404 unknown/other user, 409 already closed, 400 `as_of_ts` not after entry |
+| `POST /api/trades/sync` | `AsOfRequest` | `list[TradeRecord]` | trades that closed by `as_of_ts` (stop/target via `check_exit`); `[]` otherwise; idempotent |
+| `GET /api/journal` | — | `JournalSummary` | computed from the DB on every call (~30 ms for 180 trades) |
+| `POST /api/demo/reset` | — | 204 | replaces ALL of Sara's trades with `data/persona/sara_trades.json`; only when `env` is dev or demo (403 otherwise) |
 
 The demo flow from the frontend's side: load `config` → load the replay day's `candles` → animate locally → every ~N bars call `annotations` (and `trades/sync` if a trade is open) with the current `as_of_ts` → on a move marker click call `why` → when `sync` returns a closed trade, reload `journal`.
 
@@ -336,6 +336,7 @@ Main settings: `env`, `log_level`, `mock_api`, `db_path`, `data_dir`, `market_mo
 | httpx | one HTTP client for all three LLM providers (OpenAI-compatible APIs, A10) |
 | pandas + numpy | candle frames, resampling, analytics |
 | ccxt, feedparser *(added in Chat 3)* | exchange data (public endpoints, no key), RSS/Atom parsing |
+| tzdata *(added in Chat 5)* | the IANA time-zone database, so Asia/Tehran analytics (A19) work on any OS |
 | *Week 1:* argon2-cffi, python-multipart | password hashing, form posts |
 | *dev:* pytest, ruff, httpx2 | tests; lint + format in one tool; TestClient transport |
 
@@ -447,6 +448,20 @@ Brief decisions D1–D16 stand. New decisions:
 | C7 | API windows are capped at 5,000 bars (Persian 400 above that) | A full replay day of 1m is 1,440 bars; protects the live exchange and the browser |
 | C8 | `ALEF_REPLAY_EXCHANGE` (optional) decouples the seed files' exchange from the live exchange | Recording from one exchange and going live on another at the venue must not empty the replay days |
 
+### Chat 5 decisions (Journal & Paper Trading, Oct 18, 2026)
+
+| # | Decision | Why |
+|---|---|---|
+| J1 | **Insight rule:** a tested group becomes a card only if it has >= 10 trades AND the comparison group (the user's *other* trades) has >= 10, its loss rate is >= **15 points** higher, and a one-sided **Fisher exact** p-value is <= **0.005 / n_tests** (Bonferroni over every group tested for this user). Then one card per detector, a card sharing > 50 % of its trades (Jaccard) with a stronger card is dropped, ranked by the gap, top 3 | Every gate is one sentence for a judge. Measured on 1,000 pattern-free control datasets: family alpha 0.05 -> 2.4 % show a false card, 0.01 -> 0.4 %, **0.005 -> 0.1 %** (`make fp-report`) |
+| J2 | A **loss** is `pnl <= 0` after fees; rates are loss rates; `Insight.baseline_pct` = the other trades' loss rate, `effect_size` = the gap in points (`contract:`) | The comparison the test actually makes; the overall rate already contains the group |
+| J3 | **Detectors:** after 2 losses/wins (history = trades closed before the entry); revenge = opened <= 15 min after a losing trade closed, notional > 1.2 x mean notional; overtrading = Tehran days with >= max(Tukey fence Q3+1.5 IQR, 2 x median) trades, needs >= 7 trading days; bad hour = each Tehran entry hour with enough trades; no stop. They never read emotion tags | Timestamps and sizes can't be self-reported wrong |
+| J4 | **Paper fills use the backtester's `Costs`** (0.1 % fee + 0.05 % slippage per side). Entry = last closed 1m close at `as_of_ts`; the first bar checked is the one forming at entry; `exit_ts` = open time of the bar where stop/target hit; manual close = last closed close | Paper P&L, Sara's trades and backtests are comparable |
+| J5 | `check_exit` and `size_position` were implemented here (golden tests), since the backtester chat hadn't run yet | Paper trades needed the shared exit rule (A3) |
+| J6 | **Temporary auth stand-in:** outside `prod`, every request acts as the demo user (Sara); 401 if she doesn't exist | Auth isn't built; the journal must work end to end. The auth chat replaces `get_current_user` |
+| J7 | **Sara is ~180 trades, not ~150.** Every trade is simulated by the paper engine on the price data (honest outcomes); patterns are planted through timing and size (rejection sampling of entry minutes). The generator searches seeds until the top 3 cards are exactly the planted ones with and without the stage trade; her history ends with a >= 0.5R loss 8 minutes before `demo_entry_ts` | With a strict rule, three patterns at ~80-90 % loss need ~180 trades to be provable; the anchor makes the stage trade a revenge trade by the detector's own definition |
+| J8 | **Control datasets** have Sara's shape (busy days, quick re-entries, big sizes, all hours) with outcomes independent of all of it; tests run 50 seeds and check the control isn't vacuous | A control with no heavy days proves nothing |
+| J9 | **Synthetic stand-in prices** (`app/data/synthetic.py`, exchange id `synthetic`, gitignored) until real seeds exist; `tzdata` added | Tests and local E2E need prices; Asia/Tehran must work on Windows too |
+
 ### Open items carried forward
 - [ ] Week 0: exchange connectivity → set `ALEF_EXCHANGE` (D2). Probe built (`scripts/probe_exchanges.py`); results from Mani's networks pending
 - [ ] Week 0: Persian quality test → choose the model per task in settings
@@ -454,3 +469,5 @@ Brief decisions D1–D16 stand. New decisions:
 - [ ] Record headlines for the seed window (`scripts/record_headlines.py`) and commit `data/news/headlines.jsonl`
 - [ ] Confirm the demo format with the organizers (D11)
 - [ ] Check each LLM provider's terms on multiple free accounts (D5)
+- [ ] After real seeds + replay days exist: pick the stage moment, then `make persona DEMO_TS=<ms>` (Sara on real prices) and commit `data/persona/sara_trades.json`
+- [ ] Auth chat: replace the demo-user stand-in in `app/api/deps.py::get_current_user` and give Sara a password

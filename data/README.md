@@ -7,4 +7,5 @@ Committed seed data. The app never needs the internet to use these.
 - `replay_days.json` — list of `ReplayDay` objects (see `app/contracts/market.py`), whole UTC days chosen with `scripts/pick_replay_days.py`.
 - `macro_events.json` — list of `MacroEvent` objects, hand-written.
 - `news/headlines.jsonl` — RSS headlines (source, title, url, published_ts, symbols) for the seed window, one JSON object per line. Written by `scripts/record_headlines.py` (merged, never overwritten); `make reset-demo` loads it.
-- `persona/` — Sara's generated trades.
+- `persona/sara_trades.json` — Sara's seeded trades (`make persona`, see `scripts/generate_persona.py`). `meta` records the seed, the prices used (`synthetic` until real seed files exist, then the exchange + file hashes) and `demo_entry_ts`. `make reset-demo` and `POST /api/demo/reset` load it.
+- `market/synthetic_*` — stand-in prices from `make synthetic-market`, gitignored, never for the stage.
