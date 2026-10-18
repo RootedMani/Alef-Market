@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.contracts.common import ApiError
+from app.services.errors import InvalidRequest
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,10 @@ def install_error_handlers(app: FastAPI) -> None:
     async def _validation(_: Request, exc: RequestValidationError) -> JSONResponse:
         problems = "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors())
         return _error(422, problems)
+
+    @app.exception_handler(InvalidRequest)
+    async def _invalid(_: Request, exc: InvalidRequest) -> JSONResponse:
+        return _error(400, exc.detail, exc.message_fa)
 
     @app.exception_handler(NotImplementedError)
     async def _not_implemented(_: Request, exc: NotImplementedError) -> JSONResponse:

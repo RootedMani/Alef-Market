@@ -18,6 +18,7 @@ from app.contracts.strategy import ParseResult
 
 STRATEGY = mocks.parse_result().model_dump(mode="json")["strategy"]
 RANGE = {"symbol": "BTC/USDT", "start_ts": 0, "end_ts": 1}
+BUILT = {"/api/market/config", "/api/market/candles", "/api/market/indicator"}
 
 CASES: list[tuple[str, str, dict | None, dict | None, object]] = [
     ("GET", "/api/auth/me", None, None, UserPublic),
@@ -78,6 +79,8 @@ def test_unbuilt_endpoints_return_persian_501(
 ) -> None:
     if url == "/api/trades/size":
         pytest.skip("size calculator is planned for Week 2; becomes 200 then")
+    if url in BUILT:
+        pytest.skip("built in Chat 3; real behaviour is tested in tests/api/test_market_api.py")
     res = _call(client, method, url, params, body)
     assert res.status_code == 501, res.text
     err = ApiError.model_validate(res.json())

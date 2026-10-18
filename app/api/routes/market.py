@@ -58,7 +58,7 @@ def indicator(
         return mocks.indicator(symbol, timeframe, name, period)
     ref = IndicatorRef(name=name, period=period)
     return market.get_indicator(
-        db, symbol=symbol, timeframe=timeframe, ref=ref, start_ts=start_ts, end_ts=end_ts
+        db, settings, symbol=symbol, timeframe=timeframe, ref=ref, start_ts=start_ts, end_ts=end_ts
     )
 
 

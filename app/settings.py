@@ -72,6 +72,8 @@ class Settings(BaseSettings):
     # --- market data ---
     market_mode: Literal["replay", "live"] = "replay"
     exchange: str = "binance"  # chosen in Week 0 by the connectivity test (D2)
+    exchange_timeout_ms: int = 10_000
+    exchange_proxy: str | None = None  # e.g. http://127.0.0.1:10809 if the exchange needs one
     symbols: tuple[str, ...] = ("BTC/USDT", "ETH/USDT")
 
     # --- auth ---
