@@ -16,13 +16,13 @@ from app.settings import Settings
 
 def make_settings(tmp_path: Path, **overrides: object) -> Settings:
     """Settings for tests: temp DB, no .env file, test env."""
-    return Settings(
-        _env_file=None,  # type: ignore[call-arg]
-        env="test",
-        db_path=tmp_path / "test.db",
-        log_dir=tmp_path / "logs",
-        **overrides,  # type: ignore[arg-type]
-    )
+    values: dict[str, object] = {
+        "env": "test",
+        "db_path": tmp_path / "test.db",
+        "log_dir": tmp_path / "logs",
+        **overrides,
+    }
+    return Settings(_env_file=None, **values)  # type: ignore[call-arg, arg-type]
 
 
 @pytest.fixture
