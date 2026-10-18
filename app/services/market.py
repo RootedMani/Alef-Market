@@ -57,9 +57,10 @@ def load_replay_days(settings: Settings) -> list[ReplayDay]:
 
 
 def market_config(settings: Settings) -> MarketConfig:
+    live = settings.market_mode == "live"
     return MarketConfig(
         mode=settings.market_mode,
-        exchange=settings.exchange,
+        exchange=settings.exchange if live else settings.replay_source_exchange,
         symbols=list(settings.symbols),  # type: ignore[arg-type]
         timeframes=CHART_TIMEFRAMES,
         replay_days=load_replay_days(settings),
@@ -90,7 +91,7 @@ def _fetch(
 ) -> tuple[CandleBatch, str, bool]:
     """Run the fallback ladder. Returns ``(batch, origin, stale)``."""
     if settings.market_mode == "replay":
-        src = ReplaySource(db, exchange=settings.exchange)
+        src = ReplaySource(db, exchange=settings.replay_source_exchange)
         return src.get_candles(symbol, timeframe, start_ts, end_ts), "replay", False
     try:
         live = CcxtSource(db, live_client(settings), settings.exchange, clock=now_ms)

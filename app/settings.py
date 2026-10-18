@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     exchange: str = "binance"  # chosen in Week 0 by the connectivity test (D2)
     exchange_timeout_ms: int = 10_000
     exchange_proxy: str | None = None  # e.g. http://127.0.0.1:10809 if the exchange needs one
+    replay_exchange: str | None = None  # whose seed files replay reads; None = same as exchange
     symbols: tuple[str, ...] = ("BTC/USDT", "ETH/USDT")
 
     # --- auth ---
@@ -91,6 +92,11 @@ class Settings(BaseSettings):
     groq_model: str = "llama-3.3-70b-versatile"
     gemini_model: str = "gemini-2.5-flash"
     openrouter_model: str = "meta-llama/llama-3.3-70b-instruct:free"
+
+    @property
+    def replay_source_exchange(self) -> str:
+        """The exchange key replay mode reads from the candles table."""
+        return self.replay_exchange or self.exchange
 
     @property
     def db_url(self) -> str:
