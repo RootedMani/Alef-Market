@@ -121,7 +121,7 @@ ReplayDay(id, label_fa, start_ts, end_ts, note_fa?)
 MarketConfig(mode, exchange, symbols, timeframes, replay_days)
 ```
 
-**Candle frame** (inside the core): a pandas DataFrame indexed by `ts` (int64, strictly increasing) with float columns `open, high, low, close, volume`. Convert with `candles_to_frame` / `frame_to_candles`; check with `validate_frame`. Pydantic objects are for the API boundary only (17,000 Python objects are slow).
+**Candle frame** (inside the core): a pandas DataFrame indexed by `ts` (int64, strictly increasing) with float columns `open, high, low, close, volume` (no NaN, high/low contain open/close). Convert with `candles_to_frame` / `frame_to_candles`; check with `validate_frame(frame, timeframe=None)`. Passing `timeframe` adds the **strict** check: every `ts` aligned to the timeframe and **no gaps**. The data layer only hands strict-valid frames to the core; exchange gaps of up to 5 bars are filled at the I/O edge with flat zero-volume bars (close carried forward), and longer gaps are reported, never silently bridged (Chat 3). `empty_frame()` builds a valid zero-row frame. Pydantic objects are for the API boundary only (17,000 Python objects are slow).
 
 ### 3.3 Analysis (`analysis.py`)
 
