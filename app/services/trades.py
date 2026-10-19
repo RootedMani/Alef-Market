@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.backtest.sizing import size_position
 from app.contracts.backtest import Costs
-from app.contracts.common import TimestampMs
+from app.contracts.common import Symbol, TimestampMs
 from app.contracts.journal import OpenTradeRequest, SizeQuote, SizeRequest, TradeRecord
 from app.data.base import MarketDataSource, SourceError
 from app.data.ccxt_source import CcxtSource
@@ -78,7 +78,7 @@ def quote_trade(
     user_id: int,
 ) -> TradeQuote:
     as_of = _as_of(settings, as_of_ts)
-    entry = _price(_source(db, settings), symbol, as_of) * (1 + COSTS.slippage_pct / 100)
+    entry = _entry_close(_source(db, settings), symbol, as_of) * (1 + COSTS.slippage_pct / 100)
     equity = equity_now(db, user_id)
     req = SizeRequest(entry_price=entry, stop_pct=stop_pct, risk_pct=risk_pct, equity=equity)
     return TradeQuote(entry, equity, size_quote(req))
@@ -103,6 +103,20 @@ def _save(db: Session, rec: TradeRecord) -> TradeRecord:
     return rec
 
 
+def _entry_close(src: MarketDataSource, symbol: Symbol, as_of_ts: int) -> float:
+    """The price a trade opened now fills at (before slippage), for the quote and the open.
+
+    Replay refuses a time past the recorded data: ``latest_price`` would still answer with
+    the last recorded close however old, and the trade would never settle.
+    """
+    if isinstance(src, ReplaySource) and not src.has_bar_closing_at(symbol, as_of_ts):
+        raise InvalidRequest(
+            f"no {symbol} replay bar closed at ts={as_of_ts}: past the recorded data",
+            "این زمان خارج از داده‌های ضبط‌شده است؛ در این لحظه معامله‌ای باز نمی‌شود.",
+        )
+    return _price(src, symbol, as_of_ts)
+
+
 def open_trade(
     db: Session, settings: Settings, req: OpenTradeRequest, *, user_id: int
 ) -> TradeRecord:
@@ -112,11 +126,12 @@ def open_trade(
     """
     as_of = _as_of(settings, req.as_of_ts)
     src = _source(db, settings)
+    last_close = _entry_close(src, req.symbol, as_of)
     rec = paper.open_position(
         user_id=user_id,
         symbol=req.symbol,
         as_of_ts=as_of,
-        last_close=_price(src, req.symbol, as_of),
+        last_close=last_close,
         equity=equity_now(db, user_id),
         stop_pct=req.stop_pct,
         target_pct=req.target_pct,

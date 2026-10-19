@@ -288,3 +288,22 @@ def test_live_and_replay_with_the_same_fill_on_the_same_candles_exit_the_same(
     )
     for field in ("exit_ts", "exit_price", "fees", "stop_price", "target_price"):
         assert l_done[field] == pytest.approx(r_done[field]), field
+
+
+def test_open_right_after_the_last_recorded_bar_is_allowed(
+    api: TestClient, walk: pd.DataFrame
+) -> None:
+    end = int(walk.index[-1]) + M  # the last recorded bar has just closed
+    for as_of in (end, end + M - 1):
+        rec = _open(api, as_of, stop_pct=5)
+        assert rec.entry_price == pytest.approx(walk["close"].iloc[-1] * (1 + SLIP))
+
+
+def test_open_past_the_recorded_data_is_a_persian_400(api: TestClient, walk: pd.DataFrame) -> None:
+    end = int(walk.index[-1]) + M
+    for as_of in (end + M, end + 30 * 24 * 60 * M):  # one minute past the data; 30 days past
+        res = api.post("/api/trades", json={"symbol": "BTC/USDT", "as_of_ts": as_of, "stop_pct": 1})
+        assert res.status_code == 400, res.text
+        err = ApiError.model_validate(res.json())
+        assert err.code == "bad_request" and "داده‌های ضبط‌شده" in err.message_fa
+    assert api.get("/api/journal").json()["trades"] == []  # nothing was opened

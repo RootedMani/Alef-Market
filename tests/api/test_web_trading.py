@@ -276,3 +276,12 @@ def test_weekdays_in_iranian_order() -> None:
         BreakdownRow(key=k, n_trades=1, win_rate_pct=None, pnl=0.0) for k in ("Fri", "Mon", "Sat")
     ]
     assert [r["label"] for r in jw.breakdown_rows(rows, "weekday")] == ["شنبه", "دوشنبه", "جمعه"]
+
+
+def test_quote_and_open_refuse_a_time_past_the_recorded_data(client: TestClient) -> None:
+    past = form(as_of=T0 + 2 * DAY + 5 * MIN)  # the synthetic prices end at T0 + 2 days
+    quote = client.post("/fragments/trades/quote", data=past).text
+    assert "is-error" in quote and "داده‌های ضبط‌شده" in quote
+    res = client.post("/fragments/trades/open", data=past)
+    assert res.headers["HX-Retarget"] == "#trade-msg" and "داده‌های ضبط‌شده" in res.text
+    assert trades_in_db(client) == []

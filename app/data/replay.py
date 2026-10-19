@@ -55,3 +55,19 @@ class ReplaySource:
         if close is None:
             raise SourceError(f"no {symbol} replay data closed by ts={as_of_ts}")
         return float(close)
+
+    def has_bar_closing_at(self, symbol: Symbol, as_of_ts: TimestampMs) -> bool:
+        """Whether the 1m bar that had just closed at ``as_of_ts`` is recorded.
+
+        False past the end of the recorded data, where ``latest_price`` would still answer
+        with the last recorded close, however old.
+        """
+        step = TIMEFRAME_MS["1m"]
+        ts = as_of_ts - as_of_ts % step - step
+        stmt = select(CandleRow.ts).where(
+            CandleRow.exchange == self.exchange,
+            CandleRow.symbol == symbol,
+            CandleRow.timeframe == "1m",
+            CandleRow.ts == ts,
+        )
+        return self.session.scalar(stmt) is not None
