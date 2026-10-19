@@ -132,3 +132,50 @@ def test_settle_is_idempotent_and_ignores_bars_before_entry() -> None:
 def test_no_stop_no_target_stays_open() -> None:
     t = opened().model_copy(update={"stop_price": None, "target_price": None})
     assert settle(t, bars((100, 150, 50, 100)), as_of_ts=T + M, costs=FREE).status == "open"
+
+
+# ---- live entries fill inside the forming bar (J4: stops only see prices after the fill) ----
+
+
+def _live(stop_pct: float, target_pct: float | None = None):
+    """A live entry at 100 clicked 40 s into the bar opening at T (default costs)."""
+    t = open_position(
+        user_id=1,
+        symbol="BTC/USDT",
+        as_of_ts=T + 40_000,
+        last_close=100.0,
+        equity=10_000,
+        stop_pct=stop_pct,
+        target_pct=target_pct,
+        risk_pct=1,
+        costs=Costs(),
+    )
+    assert t.entry_price == pytest.approx(100.05) and first_bar_ts(t) == T
+    return t
+
+
+def test_live_entry_ignores_the_entry_bars_dip_before_the_click() -> None:
+    t = _live(stop_pct=0.5)  # stop 99.55
+    # The entry minute dipped to 99.0 (before the click) and closed at 100.
+    b = bars((100.2, 100.4, 99.0, 100.0), (100.0, 100.5, 99.8, 100.2))
+    assert settle(t, b, T + 2 * M, costs=Costs(), mid_bar_fill=True).status == "open"
+    # The same bars stop a fill at the bar's open (replay), which the dip came after.
+    replay = settle(t, b, T + 2 * M, costs=Costs())
+    assert replay.exit_reason == "stop"
+
+
+def test_live_entry_bar_close_still_protects_the_first_minute() -> None:
+    t = _live(stop_pct=0.5, target_pct=1.0)  # stop 99.55, target 101.05
+    down = settle(t, bars((100.0, 100.1, 99.0, 99.2)), T + M, costs=Costs(), mid_bar_fill=True)
+    assert down.exit_reason == "stop" and down.exit_ts == t.entry_ts  # clamped to the click
+    assert down.exit_price == pytest.approx(99.2 * (1 - 0.0005))  # the close, below the stop
+    up = settle(t, bars((100.0, 101.5, 99.9, 101.2)), T + M, costs=Costs(), mid_bar_fill=True)
+    assert up.exit_reason == "target" and up.exit_price == pytest.approx(101.2 * (1 - 0.0005))
+
+
+def test_live_entry_checks_every_later_bar_in_full() -> None:
+    t = _live(stop_pct=0.5)
+    b = bars((100.0, 100.1, 99.9, 100.0), (100.0, 100.1, 99.5, 100.0))  # 2nd bar wicks to 99.5
+    done = settle(t, b, T + 2 * M, costs=Costs(), mid_bar_fill=True)
+    assert done.exit_reason == "stop" and done.exit_ts == T + M
+    assert done.exit_price == pytest.approx(t.stop_price * (1 - 0.0005))

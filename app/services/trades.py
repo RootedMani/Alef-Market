@@ -106,7 +106,10 @@ def _save(db: Session, rec: TradeRecord) -> TradeRecord:
 def open_trade(
     db: Session, settings: Settings, req: OpenTradeRequest, *, user_id: int
 ) -> TradeRecord:
-    """Buy at the last closed 1m close at ``as_of_ts``; size from stop % and risk % of equity."""
+    """Buy at the price at ``as_of_ts`` (replay: last closed 1m close; live: the live price).
+
+    Size from stop % and risk % of equity.
+    """
     as_of = _as_of(settings, req.as_of_ts)
     src = _source(db, settings)
     rec = paper.open_position(
@@ -131,7 +134,7 @@ def open_trade(
     return rec.model_copy(update={"id": row.id})
 
 
-def _settle(src: MarketDataSource, rec: TradeRecord, as_of: int) -> TradeRecord:
+def _settle(settings: Settings, src: MarketDataSource, rec: TradeRecord, as_of: int) -> TradeRecord:
     if rec.status != "open" or as_of <= rec.entry_ts:
         return rec
     since = paper.first_bar_ts(rec) - 1  # candles_since is exclusive of since_ts
@@ -140,7 +143,9 @@ def _settle(src: MarketDataSource, rec: TradeRecord, as_of: int) -> TradeRecord:
     except SourceError as exc:
         logger.warning("could not settle trade %d: %s", rec.id, exc)
         return rec
-    return paper.settle(rec, bars, as_of, costs=COSTS)
+    # Live entries fill at the live price inside the forming bar (J4): see paper.settle.
+    live = settings.market_mode == "live"
+    return paper.settle(rec, bars, as_of, costs=COSTS, mid_bar_fill=live)
 
 
 def sync_trades(
@@ -155,7 +160,7 @@ def sync_trades(
     closed = []
     for row in rows:
         rec = row_to_record(row)
-        done = _settle(src, rec, as_of)
+        done = _settle(settings, src, rec, as_of)
         if done.status == "closed":
             closed.append(_save(db, done))
             logger.info("paper trade %d closed by %s", done.id, done.exit_reason)
@@ -179,7 +184,7 @@ def close_trade(
             "زمان بستن باید بعد از زمان ورود باشد.",
         )
     src = _source(db, settings)
-    done = _settle(src, rec, as_of)
+    done = _settle(settings, src, rec, as_of)
     if done.status == "open":
         done = paper.close_manual(
             rec, last_close=_price(src, rec.symbol, as_of), as_of_ts=as_of, costs=COSTS

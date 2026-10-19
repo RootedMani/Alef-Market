@@ -6,10 +6,15 @@ function the backtester uses, so paper trades and backtests can't disagree about
 targets, gaps or same-bar conflicts. The same inputs always give the same result.
 
 Fills and costs (same defaults as the backtester, ``Costs``):
-- **Entry:** the close of the last 1m bar that had closed by ``as_of_ts``, plus slippage.
+- **Entry:** the source's price at ``as_of_ts``, plus slippage. Replay: the close of the last
+  1m bar that had closed by ``as_of_ts``. Live: the live price (the forming bar's close).
   Position size comes from ``size_position`` (stop % and risk % of current equity).
+- **Stop/target only see prices after the fill** (J4, both modes). A replay fill is at the
+  forming bar's open, so that whole bar counts. A live fill is somewhere inside the forming
+  bar, whose high/low may come from before the click, so only that bar's close counts
+  (``mid_bar_fill=True``); every later bar counts in full.
 - **Stop/target:** the level from ``check_exit`` (or the bar's open on a gap), minus slippage.
-- **Manual close:** the last closed bar's close, minus slippage.
+- **Manual close:** the source's price at ``as_of_ts`` (as for the entry), minus slippage.
 - **Fees:** ``fee_pct`` of the notional on each side; ``TradeRecord.fees`` holds both sides
   once closed (the entry fee only while open).
 - ``exit_ts`` is the open time of the bar in which the stop/target was hit (the chart
@@ -92,12 +97,18 @@ def _closed(
 
 
 def settle(
-    trade: TradeRecord, bars: pd.DataFrame, as_of_ts: TimestampMs, *, costs: Costs
+    trade: TradeRecord,
+    bars: pd.DataFrame,
+    as_of_ts: TimestampMs,
+    *,
+    costs: Costs,
+    mid_bar_fill: bool = False,
 ) -> TradeRecord:
     """The trade closed by stop/target if hit by ``as_of_ts``, otherwise unchanged.
 
     ``bars`` is a 1m candle frame; only bars with ``ts >= first_bar_ts(trade)`` and
-    ``ts + 1m <= as_of_ts`` (closed by then) are used.
+    ``ts + 1m <= as_of_ts`` (closed by then) are used. With ``mid_bar_fill`` (live entries)
+    the entry bar is checked on its close only: its wicks may predate the fill.
     """
     if trade.status != "open":
         return trade
@@ -107,6 +118,8 @@ def settle(
         window.index, window["open"], window["high"], window["low"], window["close"], strict=True
     )
     for held, (ts, o, h, low, c) in enumerate(rows, start=1):
+        if mid_bar_fill and ts == start:
+            o = h = low = c  # only the close is known to come after the fill
         position = OpenPosition(
             entry_price=trade.entry_price,
             qty=trade.qty,
@@ -129,7 +142,7 @@ def settle(
 def close_manual(
     trade: TradeRecord, *, last_close: float, as_of_ts: TimestampMs, costs: Costs
 ) -> TradeRecord:
-    """Close an open trade by hand at the last closed bar's close (call ``settle`` first)."""
+    """Close an open trade by hand at the source's price at ``as_of_ts`` (call ``settle`` first)."""
     if trade.status != "open":
         raise ValueError(f"trade {trade.id} is already closed")
     return _closed(trade, exit_ts=as_of_ts, raw_price=last_close, reason="manual", costs=costs)

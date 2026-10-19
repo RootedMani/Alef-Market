@@ -20,8 +20,10 @@ from app.contracts.journal import JournalSummary, SizeQuote, TradeRecord
 from app.data.store import upsert_candles
 from app.db.engine import create_schema, make_engine, make_session_factory, session_scope
 from app.main import create_app
+from app.services import market as market_service
 from app.services.demo import ensure_demo_user
 from tests.conftest import make_settings
+from tests.fakes import FakeExchange
 from tests.fixtures import load_frame
 from tests.journal_kit import record
 
@@ -210,3 +212,79 @@ def test_demo_reset_restores_the_persona_and_drops_paper_trades(
 
 def test_demo_reset_is_refused_outside_dev_and_demo(api: TestClient) -> None:
     assert api.post("/api/demo/reset").status_code == 403  # the test env
+
+
+# ---- live mode: the entry fills at the live price inside the forming bar (J4) ----
+
+
+def _live_app(
+    tmp_path: Path, frame: pd.DataFrame, now_ms: int, monkeypatch: pytest.MonkeyPatch
+) -> tuple[TestClient, FakeExchange]:
+    """Live mode over FakeExchange serving ``frame``; its forming bar has its final OHLC."""
+    rows = [[int(ts), *map(float, r)] for ts, r in zip(frame.index, frame.to_numpy(), strict=True)]
+    fake = FakeExchange(bars={"BTC/USDT": rows}, now_ms=now_ms, id="fakex")
+    monkeypatch.setattr(market_service, "live_client", lambda _settings: fake)
+    monkeypatch.setattr(market_service, "now_ms", fake.clock)
+    settings = make_settings(tmp_path / "live", market_mode="live", exchange="fakex")
+    engine = make_engine(settings.db_path)
+    create_schema(engine)
+    with session_scope(make_session_factory(engine)) as s:
+        ensure_demo_user(s)
+    engine.dispose()
+    return TestClient(create_app(settings)), fake
+
+
+def test_live_entry_is_not_stopped_by_a_dip_before_the_click(
+    tmp_path: Path, walk: pd.DataFrame, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    t0 = int(walk.index[0])
+    ohlc = [
+        (100.0, 100.1, 99.9, 100.0),
+        (100.2, 100.4, 99.0, 100.0),  # the entry minute: dipped to 99.0 before the click
+        (100.0, 100.5, 99.8, 100.2),
+    ]
+    frame = pd.DataFrame(
+        [{"open": o, "high": h, "low": lo, "close": c, "volume": 1.0} for o, h, lo, c in ohlc],
+        index=pd.Index([t0 + i * M for i in range(3)], name="ts", dtype="int64"),
+    )
+    click = t0 + M + 40_000
+    client, fake = _live_app(tmp_path, frame, click, monkeypatch)
+    with client:
+        rec = _open(client, click, stop_pct=0.5)
+        assert rec.entry_ts == click and rec.entry_price == pytest.approx(100.0 * (1 + SLIP))
+        assert rec.stop_price == pytest.approx(rec.entry_price * 0.995)  # 99.55 > the 99.0 dip
+        fake.now_ms = t0 + 3 * M + 5_000  # both bars after the click have closed
+        assert client.post("/api/trades/sync", json={}).json() == []
+        (trade,) = client.get("/api/journal").json()["trades"]
+        assert trade["status"] == "open"
+
+
+@pytest.mark.parametrize(
+    "kw",
+    [{"stop_pct": 0.3}, {"stop_pct": 5, "target_pct": 0.2}],
+    ids=["stop", "target"],
+)
+def test_live_and_replay_with_the_same_fill_on_the_same_candles_exit_the_same(
+    tmp_path: Path, walk: pd.DataFrame, monkeypatch: pytest.MonkeyPatch, kw: dict
+) -> None:
+    # Replay at the close of bar 300 and a live click 40 s into bar 300 that closes at the
+    # same price both fill at walk close[300]; from then on they see the same prices.
+    replay_at = int(walk.index[301])
+    click = int(walk.index[300]) + 40_000
+    later = int(walk.index[-1]) + M
+    with _app(tmp_path, walk) as replay:
+        r = _open(replay, replay_at, **kw)
+        (r_done,) = replay.post("/api/trades/sync", json={"as_of_ts": later}).json()
+    client, fake = _live_app(tmp_path, walk, click, monkeypatch)
+    with client:
+        live = _open(client, click, **kw)
+        fake.now_ms = later
+        (l_done,) = client.post("/api/trades/sync", json={}).json()
+    assert live.entry_price == pytest.approx(r.entry_price) and live.qty == pytest.approx(r.qty)
+    assert (
+        l_done["exit_reason"]
+        == r_done["exit_reason"]
+        == ("target" if "target_pct" in kw else "stop")
+    )
+    for field in ("exit_ts", "exit_price", "fees", "stop_price", "target_price"):
+        assert l_done[field] == pytest.approx(r_done[field]), field
