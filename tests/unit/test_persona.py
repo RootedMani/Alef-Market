@@ -160,12 +160,42 @@ def test_generator_is_deterministic(prices) -> None:
     )
 
 
-def test_committed_persona_is_exactly_what_the_generator_makes(sara, prices) -> None:
+def _same_trade(a: TradeRecord, b: TradeRecord) -> bool:
+    """Discrete fields equal exactly; float fields equal to 1e-9 relative.
+
+    The synthetic prices come from numpy ``exp``/``cumsum``, whose last bit can differ between
+    CPUs (CI vs a laptop), so prices, sizes and fees may differ in the 16th digit. Anything
+    that changes a decision (which trades exist, when, why they closed) is still exact.
+    """
+    da, db = a.model_dump(), b.model_dump()
+    for key, va in da.items():
+        vb = db[key]
+        if isinstance(va, float) and isinstance(vb, float):
+            if va != pytest.approx(vb, rel=1e-9):
+                return False
+        elif va != vb:
+            return False
+    return True
+
+
+def test_committed_persona_is_what_the_generator_makes(sara, prices) -> None:
     meta, trades = sara
     if meta["prices"] != "synthetic":
         pytest.skip("persona was generated on real seed files")
     again, planted = generate_sara(prices, seed=meta["seed"], demo_entry_ts=meta["demo_entry_ts"])
-    assert again == trades and planted == meta["planted"]
+    assert planted == meta["planted"]
+    assert len(again) == len(trades)
+    bad = [t.id for t, u in zip(trades, again, strict=True) if not _same_trade(t, u)]
+    assert not bad, f"trades differ beyond float rounding: {bad[:5]}"
+
+
+def test_trade_comparison_tolerates_only_float_rounding(sara) -> None:
+    _, trades = sara
+    t = trades[0]
+    assert _same_trade(t, t.model_copy(update={"qty": t.qty * (1 + 1e-15)}))
+    assert not _same_trade(t, t.model_copy(update={"qty": t.qty * 1.001}))
+    assert not _same_trade(t, t.model_copy(update={"exit_reason": "stop"}))
+    assert not _same_trade(t, t.model_copy(update={"exit_ts": (t.exit_ts or 0) + 60_000}))
 
 
 def test_history_ends_with_a_clear_loss_8_minutes_before_the_demo_trade(sara) -> None:
