@@ -580,6 +580,34 @@ def test_a_bad_llm_proxy_never_stops_the_app_booting(tmp_path: Path, proxy: str)
     assert app.state.gateway.providers == []  # no provider rather than no app
 
 
+def test_a_bad_llm_proxy_turns_off_only_the_llm_and_says_how_to_fix_it(
+    tmp_path: Path, factory: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    s = make_settings(tmp_path, groq_keys="g1", llm_proxy="127.0.0.1:10808")
+    with caplog.at_level(logging.ERROR, logger="app.llm.providers"):
+        gw = build_gateway(s, factory)
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert len(errors) == 1 and "ALEF_LLM_PROXY=http://127.0.0.1:10808" in errors[0].getMessage()
+    out = gw.run_text(WHY, WHY_FACTS, fallback=template)
+    assert out.value == "TEMPLATE" and out.meta.source == "template" and out.attempts == []
+    assert gw.run_json(PARSE, PARSE_FACTS, fallback=unclear).value.status == "unclear"
+
+
+def test_no_keys_and_no_proxy_still_boots_and_serves_templates(
+    tmp_path: Path, factory: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    s = make_settings(tmp_path)
+    assert s.llm_proxy is None
+    assert not any(s.api_keys(name) for name in s.llm_provider_order)
+    app = create_app(s)
+    with caplog.at_level(logging.WARNING), TestClient(app) as c:
+        assert c.get("/api/health").status_code == 200
+    assert app.state.gateway.providers == []
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+    out = build_gateway(s, factory).run_text(WHY, WHY_FACTS, fallback=template)
+    assert out.value == "TEMPLATE" and out.meta.source == "template"
+
+
 def test_db_failures_with_every_provider_dead_still_give_the_template(clock: FakeClock) -> None:
     gw = make_gw(BrokenSession, [fake("groq#1", "timeout")], clock)
     assert gw.run_text(WHY, WHY_FACTS, fallback=template).value == "TEMPLATE"

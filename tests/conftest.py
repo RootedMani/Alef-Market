@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -12,6 +13,16 @@ from sqlalchemy.orm import Session
 from app.db.engine import create_schema, make_engine, make_session_factory
 from app.main import create_app
 from app.settings import Settings
+
+PROXY_ENV = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY")
+
+
+@pytest.fixture(autouse=True)
+def _no_developer_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The shell's ALEF_* and proxy variables must not reach Settings or httpx in tests."""
+    for name in list(os.environ):
+        if name.upper().startswith("ALEF_") or name.upper() in PROXY_ENV:
+            monkeypatch.delenv(name)
 
 
 def make_settings(tmp_path: Path, **overrides: object) -> Settings:

@@ -119,7 +119,8 @@ class OpenAICompatProvider:
     """POST {base_url}/chat/completions with ``Authorization: Bearer <key>``.
 
     One ``httpx.Client`` per instance (connection reuse; safe across threads). ``proxy`` is
-    ``ALEF_LLM_PROXY``; ``transport`` is for tests (``httpx.MockTransport``).
+    ``ALEF_LLM_PROXY`` and the only proxy used: the shell's ``HTTP(S)_PROXY``/``ALL_PROXY``
+    are ignored (``trust_env=False``); ``transport`` is for tests (``httpx.MockTransport``).
 
     If the model rejects ``response_format`` (a 400 that says so), the call is retried once
     without it, within the same timeout, and the instance stops sending it: the prompt and
@@ -144,7 +145,7 @@ class OpenAICompatProvider:
         self.model = model
         self.proxy = proxy
         self._api_key = api_key
-        self._client = httpx.Client(proxy=proxy, transport=transport)
+        self._client = httpx.Client(proxy=proxy, transport=transport, trust_env=False)
         self._clock = clock
         self.json_mode_ok = True  # False once the model rejected response_format
 
@@ -260,8 +261,10 @@ def build_providers(settings: Settings) -> list[OpenAICompatProvider]:
                 if type(exc).__name__ not in failed:
                     failed.add(type(exc).__name__)
                     logger.error(
-                        "LLM client not built (%s): check ALEF_LLM_PROXY (needs a scheme such "
-                        "as http://; socks5:// needs the httpx[socks] extra)",
+                        "LLM client not built (%s), LLM calls are off (cache and templates "
+                        "only). Fix: set ALEF_LLM_PROXY to a URL with a scheme, e.g. "
+                        "ALEF_LLM_PROXY=http://127.0.0.1:10808, or unset it; for socks5:// "
+                        "run `uv add 'httpx[socks]'`. Then restart.",
                         type(exc).__name__,
                     )
     return built

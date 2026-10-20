@@ -303,6 +303,19 @@ def test_llm_proxy_is_separate_from_the_exchange_proxy(tmp_path: Path) -> None:
     assert build_providers(s)[0].proxy is None
 
 
+def test_the_shells_proxy_variables_never_reach_the_llm_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A desktop proxy app exports ALL_PROXY=socks://...; httpx used to read it and refuse."""
+    monkeypatch.setenv("ALL_PROXY", "socks://127.0.0.1:10808/")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:1/")
+    s = make_settings(tmp_path, groq_keys="g1")
+    with caplog.at_level(logging.ERROR, logger="app.llm.providers"):
+        providers = build_providers(s)
+    assert [p.alias for p in providers] == ["groq#1"] and providers[0].proxy is None
+    assert caplog.text == ""
+
+
 def test_fake_provider_reports_its_provider_name() -> None:
     assert FakeProvider("openrouter#3", []).provider == "openrouter"
 
@@ -314,4 +327,5 @@ def test_a_bad_proxy_skips_the_providers_with_an_error_log(
     s = make_settings(tmp_path, groq_keys="g1,g2", llm_proxy=proxy)
     with caplog.at_level(logging.ERROR, logger="app.llm.providers"):
         assert build_providers(s) == []
-    assert "ALEF_LLM_PROXY" in caplog.text and "g1" not in caplog.text
+    assert "ALEF_LLM_PROXY=http://127.0.0.1:10808" in caplog.text and "g1" not in caplog.text
+    assert [r.levelno for r in caplog.records] == [logging.ERROR]  # once, not once per key
