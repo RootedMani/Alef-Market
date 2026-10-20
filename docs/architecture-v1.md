@@ -179,11 +179,16 @@ BacktestMetrics(total_return_pct, buy_hold_return_pct, max_drawdown_pct (positiv
 BacktestResult(request, bars, warmup_bars, metrics, trades, equity, buy_hold, summary: Narrative?)
 ```
 
-**Engine and exit rules** (`backtest/exits.py`, used by **both** the engine and paper trades, A3):
-1. Signals are evaluated on bar close; entries fill at the next bar's open plus slippage.
-2. Each bar, in order: **stop** (`low <= stop`; fill at the stop, or at the open if it gapped through), then **target**. Both in one bar → stop.
-3. Signal and time exits are decided on close and filled at the next open.
-4. Indicator warm-up bars are skipped. Any open position closes on the last bar with `end_of_data`.
+**Engine and exit rules** (`backtest/exits.py`, used by **both** the engine and paper trades, A3; details in `backtest/engine.py`, decisions B1–B18):
+1. Signals are evaluated on bar close (vectorized, `backtest/rules.py`); an entry signal on a bar where we are flat at the close fills at the next bar's open plus slippage. Long only, one position at a time; a signal on the last bar is not filled.
+2. Each bar in a position goes through `check_exit`, in order: **stop** (`low <= stop`; fill at the stop, or at the open if it gapped through), then **target**. Both in one bar → stop. Stop/target are % of the entry fill; every exit fill pays slippage.
+3. Signal and time exits are decided on close and filled at the next open (`bars_held` counts the current bar; time exit at `bars_held >= time_exit_bars`).
+4. Indicator warm-up bars are skipped (`strategy_warmup`: the longest operand warm-up, +1 for a crossing). Any open position closes on the last bar with `end_of_data` at the last close.
+5. **Crossings:** `crosses_above` at `t` = `left[t-1] <= right[t-1]` and `left[t] > right[t]` (mirror for `crosses_below`); any NaN → False.
+6. **Sizing** on realized equity at entry: `equity_pct` spends `value_pct` % of equity *including the entry fee*; `risk_pct` uses `size_position`, capped the same way.
+7. **Curves:** equity marked at every tested bar's close (`cash + qty × close`), so the last point = initial + Σ pnl; buy-and-hold = `initial × close / first tested close`, no costs. `SimTrade.exit_ts` is the bar where a stop/target hit, the fill bar for signal/time exits, the last bar for `end_of_data`.
+
+**Metrics** (`backtest/metrics.py`): total and buy-and-hold return on the curves; max drawdown = largest fall from a running peak of the close-marked curve; win = `pnl > 0` after fees; profit factor = gross wins / gross losses (None with no losses, 0 with no wins); `avg_r` = mean `pnl / (qty × (entry − stop))` (None without a stop); exposure = bars in a position / tested bars; fees = both sides.
 
 ### 3.6 Journal (`journal.py`)
 
@@ -257,7 +262,7 @@ All JSON lives under `/api`. Interactive docs: `http://127.0.0.1:8000/docs`. Unl
 | `GET /api/briefing` | `as_of_ts?` | `Briefing` | replay: pass the replay start |
 | `POST /api/backtest/parse` | `ParseRequest` | `ParseResult` | always 200; problems are in `status` |
 | `POST /api/backtest/edit` | `EditRequest` | `ParseResult` | "make the stop 2%" |
-| `POST /api/backtest/run` | `BacktestRequest` | `BacktestResult` | saved to `backtest_runs` |
+| `POST /api/backtest/run` | `BacktestRequest` | `BacktestResult` | saved to `backtest_runs` (`text` = the code readback); `start_ts`/`end_ts` None = stored data (live: end = now); warm-up history is loaded before `start_ts`; `result.request` echoes the range actually tested; 400 if the window is over 120 days or too short for the warm-up; `summary` is None until the LLM chat fills it |
 | `POST /api/trades/size` *public* | `SizeRequest` | `SizeQuote` | pure; call on every input change |
 | `POST /api/trades` | `OpenTradeRequest` | `TradeRecord` (201) | fills at the last closed 1m close at `as_of_ts` + slippage; size from `size_position` on current equity; 400 if replay and no `as_of_ts` or no price yet |
 | `POST /api/trades/{id}/close` | `AsOfRequest` | `TradeRecord` | manual close at the last closed close; if the stop/target was hit earlier, that exit is returned instead; 404 unknown/other user, 409 already closed, 400 `as_of_ts` not after entry |
@@ -442,7 +447,7 @@ Brief decisions D1–D16 stand. New decisions:
 | C1 | **Gap policy:** `validate_frame(frame, timeframe)` rejects gaps/misalignment (`contract:` change); gaps of up to 5 bars are filled with flat zero-volume bars at the I/O edge; longer gaps are refused by the recorder and trimmed (latest contiguous run) at read time | Indicators and next-bar fills are silently wrong across holes; one missing minute in 108k bars must not block recording |
 | C2 | **Resample everything from 1m** (5m, 1h, 1d, UTC buckets, complete buckets only); nothing else is stored or fetched. Amends A6 | One data path, works offline, timeframes can never disagree |
 | C3 | `MarketDataSource.get_candles` returns `CandleBatch(frame, partial)`; every returned frame is strict-valid | The forming bar comes from the same exchange call; the core never sees gaps |
-| C4 | Indicators follow TradingView conventions (RSI/ATR Wilder-smoothed; RSI first value at bar `p`, ATR at `p-1`; RSI with no losses = 100), except EMA is SMA-seeded; `warmup_bars(EMA) = 3p` | Values match the chart traders compare against; the seed's weight after 3p bars is < 0.3% |
+| C4 | Indicators follow TradingView conventions (RSI/ATR Wilder-smoothed; RSI first value at bar `p`, ATR at `p-1`; RSI with no losses = 100), except EMA is SMA-seeded; `warmup_bars(EMA) = 3p` (RSI/ATR: `6p`, amended by B17) | Values match the chart traders compare against; the seed's weight after 3p bars is < 0.3% |
 | C5 | Headlines for past replay days via **paged RSS backfill** (`?paged=N` on WordPress feeds: CryptoSlate, Bitcoin.com News, BeInCrypto) + 4 latest-only feeds (CoinDesk, Cointelegraph, Decrypt, The Block); committed as `data/news/headlines.jsonl` | Latest-only feeds cover just 1–3 days; paged RSS is still RSS (D4), not scraping |
 | C6 | Feeds are a reviewed constant (`app/news/rss.py::FEEDS`), not a setting | Each feed was verified by hand; changing one should be a reviewed commit |
 | C7 | API windows are capped at 5,000 bars (Persian 400 above that) | A full replay day of 1m is 1,440 bars; protects the live exchange and the browser |
@@ -466,7 +471,24 @@ Brief decisions D1–D16 stand. New decisions:
 
 | # | Decision | Why |
 |---|---|---|
+| B1 | Stop and target are % of the **slipped** entry fill; every exit fill (stop, target, gap open, next open, end of data) is × (1 − slippage) | Same as paper trades (J4), so backtests and paper P&L are comparable |
+| B2 | An entry signal counts on any bar where we are **flat at the close**, including a bar where a stop/target closed us; no exit and re-entry at the same open; a signal on the last bar is not filled | One position at a time with no order-flip ambiguity |
+| B3 | A signal/time exit decided on the last bar closes at that bar's close as `end_of_data` | There is no next open to fill at |
+| B4 | Equity is marked at each tested bar's close as `cash + qty × close` (no exit costs deducted); one point per tested bar | Hand-checkable; once flat, equity = initial + Σ pnl exactly (tested) |
+| B5 | Max drawdown is measured on the close-marked curve, not intrabar lows | It is what the chart's curve shows |
+| B6 | Warm-up = the longest operand warm-up over the entry **and** exit rules, **+1 for a crossing** | A crossing also reads the previous bar |
+| B7 | The service loads the warm-up history before `start_ts` when it exists | The user's whole window is tested, like `/api/market/indicator` |
+| B8 | Buy-and-hold = `initial × close / first tested close`, no costs | The textbook baseline; both curves start at the same point |
+| B9 | Exposure = bars from the entry bar to the exit-decision bar (the fill bar of a market exit is not counted) / tested bars | A bar counts if the position was exposed to its moves |
+| B10 | Win = `pnl > 0` after fees; profit factor None when the losses sum to 0, 0 with no wins; `avg_r` None without a stop | Matches J2 and the contract's None cases |
+| B11 | `BacktestResult.summary` stays None in the backtester | No LLM calls in the engine chat; the LLM chat writes it |
+| B12 | The readback uses Persian words for operators («بیشتر از», «کمتر از», «رو به بالا قطع کند»), never `<`/`>`; readback-only terms live in `readback.py`, not in `glossary_fa.md` | `<`/`>` mirror inside RTL text, so «RSI(14) < 30» could be read reversed; the glossary feeds versioned prompts whose cache key holds only the prompt id |
 | B13 | `risk_pct` sizing is capped at `MAX_RISK_PCT` = 10 in `Strategy` (`contract:`); `SizeRequest.risk_pct` uses the same constant | `value_pct` allowed 100, so "risk 20 %" passed validation and then crashed `size_position` with a 500 |
+| B14 | `equity_pct` sizing is **fee-inclusive**: notional + entry fee = `value_pct` % of equity; `risk_pct` (`size_position`) is capped the same way | Cash never goes negative; a judge could read −10 USDT cash as hidden leverage |
+| B15 | Backtest windows are capped at **120 days** (400 above); an omitted `start_ts` is clamped to the last 120 days instead | Keeps a request around 1 s (172,800 1m rows); the 2-month case takes 0.48 s end to end |
+| B16 | `BacktestResult.request` echoes the request with `start_ts`/`end_ts` set to the range actually tested; `exit_ts` = bar of a stop/target hit, fill bar of a market exit, last bar for `end_of_data` | The echoed request re-runs to the same result (tested); the chart marks bars by open time |
+| B17 | **RSI and ATR `warmup_bars` = 6 × period** (was `p` / `p − 1`; amends C4). Changes the backtester's skip and the `/indicator` lookback | Wilder smoothing remembers its seed: with `p` bars of history, RSI(14) differed by up to 21–30 points depending on where history started, so the chart's RSI disagreed with a backtest signal (found while hand-verifying a trade). 6p is the smallest multiple within 0.5 RSI points / 0.5 % in every measured case (worst 0.20 / 0.10 %); EMA's 3p passes the same test |
+| B18 | **Crossings:** `crosses_above` at `t` = `left[t-1] <= right[t-1]` and `left[t] > right[t]`; `crosses_below` mirrors; any NaN → False | "Touch, then through" is a cross, touching alone is not; NaN can never signal (no `~(a > b)`) |
 
 ### Open items carried forward
 - [ ] Week 0: exchange connectivity → set `ALEF_EXCHANGE` (D2). Probe built (`scripts/probe_exchanges.py`); results from Mani's networks pending
@@ -477,3 +499,5 @@ Brief decisions D1–D16 stand. New decisions:
 - [ ] Check each LLM provider's terms on multiple free accounts (D5)
 - [ ] After real seeds + replay days exist: pick the stage moment, then `make persona DEMO_TS=<ms>` (Sara on real prices) and commit `data/persona/sara_trades.json`
 - [ ] Auth chat: replace the demo-user stand-in in `app/api/deps.py::get_current_user` and give Sara a password
+- [ ] LLM chat: fill `BacktestResult.summary` (`backtest_summary.v1`) in `services/backtest.py`; build `/backtest/parse` and `/edit` with `readback_fa = strategy_to_persian(strategy)`
+- [ ] `BacktestResult` has no `stale` flag: a live-mode backtest served from the DB cache is only logged (WARNING). Add one (`contract:`) if the frontend needs the badge
