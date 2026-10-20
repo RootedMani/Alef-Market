@@ -3,7 +3,8 @@
 SQLite settings applied on every connection:
 - ``journal_mode=WAL``: readers don't block the writer (chart polling while a trade is saved).
 - ``foreign_keys=ON``: SQLite ignores foreign keys unless asked.
-- ``busy_timeout=5000``: wait up to 5 s for a lock instead of failing immediately.
+- ``busy_timeout=5000``: wait up to 5 s for a lock instead of failing immediately (the LLM
+  gateway's own engine uses a much shorter one: its writes are optional).
 
 Schema: ``create_schema()`` builds tables from ``tables.py`` (decision A8: no Alembic before
 the contest; ``scripts/reset_demo.py`` rebuilds the demo DB from seed files).
@@ -21,7 +22,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.db.tables import Base
 
 
-def make_engine(db_path: Path) -> Engine:
+def make_engine(db_path: Path, *, busy_timeout_ms: int = 5000) -> Engine:
     """Create an engine for a SQLite file, creating its folder if needed."""
     db_path.parent.mkdir(parents=True, exist_ok=True)
     engine = create_engine(
@@ -34,7 +35,7 @@ def make_engine(db_path: Path) -> Engine:
         cur = dbapi_conn.cursor()
         cur.execute("PRAGMA journal_mode=WAL")
         cur.execute("PRAGMA foreign_keys=ON")
-        cur.execute("PRAGMA busy_timeout=5000")
+        cur.execute(f"PRAGMA busy_timeout={int(busy_timeout_ms)}")
         cur.close()
 
     return engine

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from pathlib import Path
 
@@ -304,3 +305,13 @@ def test_llm_proxy_is_separate_from_the_exchange_proxy(tmp_path: Path) -> None:
 
 def test_fake_provider_reports_its_provider_name() -> None:
     assert FakeProvider("openrouter#3", []).provider == "openrouter"
+
+
+@pytest.mark.parametrize("proxy", ["127.0.0.1:10808", "socks5://127.0.0.1:10808", "ftp://x:1"])
+def test_a_bad_proxy_skips_the_providers_with_an_error_log(
+    tmp_path: Path, proxy: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    s = make_settings(tmp_path, groq_keys="g1,g2", llm_proxy=proxy)
+    with caplog.at_level(logging.ERROR, logger="app.llm.providers"):
+        assert build_providers(s) == []
+    assert "ALEF_LLM_PROXY" in caplog.text and "g1" not in caplog.text

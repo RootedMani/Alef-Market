@@ -11,6 +11,7 @@ else (other statuses, network errors, a 200 without an answer) -> ``http_error``
 
 from __future__ import annotations
 
+import logging
 import math
 import time
 from collections.abc import Callable
@@ -20,6 +21,8 @@ from typing import Any, Literal, Protocol
 import httpx
 
 from app.settings import ProviderName, Settings
+
+logger = logging.getLogger(__name__)
 
 BASE_URLS: dict[ProviderName, str] = {
     "groq": "https://api.groq.com/openai/v1",
@@ -227,21 +230,38 @@ class OpenAICompatProvider:
 
 
 def build_providers(settings: Settings) -> list[OpenAICompatProvider]:
-    """Every configured (provider, key) pair, in ``llm_provider_order`` then key order."""
+    """Every configured (provider, key) pair, in ``llm_provider_order`` then key order.
+
+    A client that can't be built (a bad ``ALEF_LLM_PROXY``, or a SOCKS proxy without
+    ``socksio``) is logged as an ERROR and skipped: the app still boots, on cache and templates.
+    """
     models: dict[ProviderName, str] = {
         "groq": settings.groq_model,
         "gemini": settings.gemini_model,
         "openrouter": settings.openrouter_model,
     }
-    return [
-        OpenAICompatProvider(
-            alias=key.alias,
-            provider=name,
-            base_url=BASE_URLS[name],
-            model=models[name],
-            api_key=key.value,
-            proxy=settings.llm_proxy,
-        )
-        for name in settings.llm_provider_order
-        for key in settings.api_keys(name)
-    ]
+    built: list[OpenAICompatProvider] = []
+    failed: set[str] = set()
+    for name in settings.llm_provider_order:
+        for key in settings.api_keys(name):
+            try:
+                built.append(
+                    OpenAICompatProvider(
+                        alias=key.alias,
+                        provider=name,
+                        base_url=BASE_URLS[name],
+                        model=models[name],
+                        api_key=key.value,
+                        proxy=settings.llm_proxy,
+                    )
+                )
+            except (ValueError, ImportError, TypeError) as exc:
+                # The message can contain the proxy URL (and its credentials): log the type only.
+                if type(exc).__name__ not in failed:
+                    failed.add(type(exc).__name__)
+                    logger.error(
+                        "LLM client not built (%s): check ALEF_LLM_PROXY (needs a scheme such "
+                        "as http://; socks5:// needs the httpx[socks] extra)",
+                        type(exc).__name__,
+                    )
+    return built

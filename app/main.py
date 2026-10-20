@@ -14,7 +14,7 @@ from app.api.errors import install_error_handlers
 from app.api.routes import ROUTERS
 from app.db.engine import create_schema, make_engine, make_session_factory, session_scope
 from app.llm.cache import load_pinned_safely
-from app.llm.gateway import build_gateway
+from app.llm.gateway import DB_BUSY_TIMEOUT_MS, build_gateway
 from app.logging_setup import setup_logging
 from app.settings import Settings, get_settings
 from app.web.pages import STATIC_DIR
@@ -29,6 +29,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     setup_logging(settings)
 
     engine = make_engine(settings.db_path)
+    # The gateway gets its own engine (short busy timeout) for llm_calls and the cache.
+    llm_engine = make_engine(settings.db_path, busy_timeout_ms=DB_BUSY_TIMEOUT_MS)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -45,12 +47,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         yield
         engine.dispose()
+        llm_engine.dispose()
 
     app = FastAPI(title="Alef Market API", version=__version__, lifespan=lifespan)
     app.state.settings = settings
     app.state.engine = engine
     app.state.session_factory = make_session_factory(engine)
-    app.state.gateway = build_gateway(settings, app.state.session_factory)  # no network here
+    app.state.llm_engine = llm_engine
+    app.state.gateway = build_gateway(settings, make_session_factory(llm_engine))  # no network
 
     install_error_handlers(app)
     for router in ROUTERS:

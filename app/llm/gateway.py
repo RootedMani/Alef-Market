@@ -57,6 +57,10 @@ CacheMode = Literal["prefer", "fallback", "only"]
 Outcome = Literal["ok", "rate_limited", "timeout", "http_error", "auth", "invalid_output"]
 Facts = BaseModel | dict[str, Any]
 
+# The gateway's sessions use their own engine with this busy timeout (the app's is 5 s): if a
+# request session holds the write lock, an llm_calls/cache write gives up fast (a WARNING)
+# instead of stalling the answer.
+DB_BUSY_TIMEOUT_MS = 200
 MIN_ATTEMPT_S = 1.0  # don't start an attempt with less time than this left: use the fallback
 PROVIDER_COOLDOWN_S = 60.0  # after a timeout, a 5xx or a network error
 _MAX_ECHO_CHARS = 1500  # how much of a rejected answer is shown back on the retry
@@ -81,11 +85,11 @@ class LLMOutcome[T]:
 def user_message(facts: Facts) -> str:
     """The facts as JSON between ``<facts>`` tags (the system prompt says: data, not orders).
 
-    Every ``<`` inside is escaped as ``\\u003c`` (still the same JSON), so text a user typed
-    can't close the block early; Persian stays readable.
+    Only ``</`` is escaped, as ``<\\/`` (a legal JSON escape for the same string), so text a
+    user typed can't close the block, while ``RSI < 30`` and ``"op": "<"`` stay as written.
     """
     data = facts.model_dump(mode="json") if isinstance(facts, BaseModel) else facts
-    body = json.dumps(data, ensure_ascii=False, sort_keys=True).replace("<", "\\u003c")
+    body = json.dumps(data, ensure_ascii=False, sort_keys=True).replace("</", "<\\/")
     return f"<facts>\n{body}\n</facts>"
 
 
