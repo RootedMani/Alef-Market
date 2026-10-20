@@ -13,7 +13,7 @@ TradingView's built-ins except that EMA is seeded with an SMA (TA-Lib style):
   backtester skips ``3p`` bars (``warmup_bars``) before trusting it.
 - RSI and ATR are recursive too (Wilder, ``alpha = 1/p``, slower than EMA), so they get ``6p``
   (B17, amends C4). Measured: after only ``p`` bars RSI(14) can differ by 20-30 RSI points
-  depending on where the history starts; after ``6p`` by < 0.25 points (ATR < 0.1 %).
+  depending on where the history starts; after ``6p`` by < 0.25 points (ATR <= 0.1 %).
 - **RSI(p)**, Wilder: average gain and average loss of the close-to-close changes, smoothed with
   **Wilder's smoothing** ``avg_t = (avg_{t-1}*(p-1) + x_t)/p`` (an EMA with ``alpha = 1/p``,
   seeded with the plain mean of the first ``p`` changes). First value at index ``p`` (bar 0 has

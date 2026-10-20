@@ -39,6 +39,8 @@ Tests 1 and 2 cannot see a one-bar peek, where the engine reads bar j's close an
 | Engine only, 60 days of 5m, a heavy strategy (every indicator, crossings, nested group, all exits, costs), 105 trades | 17,280 | **0.094 s** (3 runs: 0.094, 0.095, 0.094) |
 | `POST /api/backtest/run` through HTTP: SQLite read of 86,400 1m rows → resample → engine → save → JSON | 16,679 tested | **0.48 s** (0.494, 0.475) |
 
+| Service path at the 120-day cap (B15): 172,800 1m rows, a scratch script, not a test | 33,959 tested | **0.85–0.97 s** (3 runs) |
+
 Both are asserted under 3 s in `tests/unit/test_backtest_performance.py`. Run `pytest -s` to print them.
 
 ## Hand-verified trade (replay data, through the real server)
