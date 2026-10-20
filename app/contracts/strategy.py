@@ -32,6 +32,8 @@ from app.contracts.common import Contract, Lang, Pct, TextMeta
 
 MAX_RULE_DEPTH = 2
 MAX_GROUP_ITEMS = 6
+# Most a risk_pct strategy may risk per trade; the paper-trade size calculator uses the same cap.
+MAX_RISK_PCT = 10.0
 
 # Periods code fills in when the user didn't give one. SMA/EMA have no default: we ask instead.
 DEFAULT_PERIODS: dict[str, int] = {"rsi": 14, "atr": 14, "avg_volume": 20}
@@ -119,7 +121,10 @@ class Exits(Contract):
 
 
 class PositionSizing(Contract):
-    """``equity_pct``: use value_pct % of equity. ``risk_pct``: lose value_pct % at the stop."""
+    """``equity_pct``: use value_pct % of equity. ``risk_pct``: lose value_pct % at the stop.
+
+    ``risk_pct`` is capped at ``MAX_RISK_PCT`` by ``Strategy`` (it needs the stop to check).
+    """
 
     mode: Literal["equity_pct", "risk_pct"] = "equity_pct"
     value_pct: Pct = Field(default=100.0, gt=0, le=100)
@@ -139,6 +144,8 @@ class Strategy(Contract):
                 raise ValueError(f"rules may be nested at most {MAX_RULE_DEPTH} levels deep")
         if self.sizing.mode == "risk_pct" and self.exits.stop_loss_pct is None:
             raise ValueError("risk-based sizing needs a stop loss")
+        if self.sizing.mode == "risk_pct" and self.sizing.value_pct > MAX_RISK_PCT:
+            raise ValueError(f"risk-based sizing may risk at most {MAX_RISK_PCT:g}% per trade")
         return self
 
 

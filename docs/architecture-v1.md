@@ -147,11 +147,11 @@ Condition(kind="cond", left: Operand, op: ">"|"<"|"crosses_above"|"crosses_below
 Group(kind="group", logic: and|or, items: list[Rule] (2..6))
 Rule      = Condition | Group                    # discriminated by "kind"; depth <= 2
 Exits(stop_loss_pct?, take_profit_pct?, time_exit_bars?, exit_rule: Rule?)
-PositionSizing(mode: equity_pct|risk_pct = equity_pct, value_pct = 100)
+PositionSizing(mode: equity_pct|risk_pct = equity_pct, value_pct = 100)   # risk_pct: <= 10
 Strategy(version=1, side="long", entry: Rule, exits: Exits, sizing: PositionSizing)
 ```
 
-Validation rules in code: missing period for RSI/ATR/avg_volume → **code fills** 14/14/20; missing period for SMA/EMA → error (we ask the user); two constants in one condition → error; depth > 2 → error; `risk_pct` sizing without a stop → error.
+Validation rules in code: missing period for RSI/ATR/avg_volume → **code fills** 14/14/20; missing period for SMA/EMA → error (we ask the user); two constants in one condition → error; depth > 2 → error; `risk_pct` sizing without a stop → error; `risk_pct` above `MAX_RISK_PCT` = 10 → error (the same cap as `SizeRequest.risk_pct`, B13).
 
 LLM-facing shapes:
 
@@ -461,6 +461,12 @@ Brief decisions D1–D16 stand. New decisions:
 | J7 | **Sara has 150-200 trades (197 today), not ~150.** Every trade is simulated by the paper engine on the price data (honest outcomes); patterns are planted through timing and size (rejection sampling of entry minutes). The generator searches seeds until the top 3 cards are exactly the planted ones before the stage trade and after it (win or loss), no card shows more than 90 %, and her history ends with a >= 0.5R loss 8 minutes before `demo_entry_ts` | With a strict rule, three patterns at ~80-90 % loss need ~200 trades to be provable; the anchor makes the stage trade a revenge trade by the detector's own definition; a 95 % card looks planted |
 | J8 | **Control datasets** have Sara's shape (busy days, quick re-entries, big sizes, all hours) with outcomes independent of all of it; tests run 50 seeds and check the control isn't vacuous | A control with no heavy days proves nothing |
 | J9 | **Synthetic stand-in prices** (`app/data/synthetic.py`, exchange id `synthetic`, gitignored) until real seeds exist; `tzdata` added | Tests and local E2E need prices; Asia/Tehran must work on Windows too |
+
+### Chat 6 decisions (Backtesting Engine, Oct 20, 2026)
+
+| # | Decision | Why |
+|---|---|---|
+| B13 | `risk_pct` sizing is capped at `MAX_RISK_PCT` = 10 in `Strategy` (`contract:`); `SizeRequest.risk_pct` uses the same constant | `value_pct` allowed 100, so "risk 20 %" passed validation and then crashed `size_position` with a 500 |
 
 ### Open items carried forward
 - [ ] Week 0: exchange connectivity → set `ALEF_EXCHANGE` (D2). Probe built (`scripts/probe_exchanges.py`); results from Mani's networks pending

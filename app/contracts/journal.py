@@ -8,6 +8,7 @@ from pydantic import Field, model_validator
 
 from app.contracts.backtest import EquityPoint, ExitReason
 from app.contracts.common import Contract, Narrative, Pct, Symbol, TimestampMs
+from app.contracts.strategy import MAX_RISK_PCT
 
 # Insights with fewer trades than this are never shown (Brief §5, Feature 4).
 INSIGHT_MIN_SAMPLE = 10
@@ -61,7 +62,9 @@ class TradeView(TradeRecord):
 class SizeRequest(Contract):
     entry_price: float = Field(gt=0)
     stop_pct: Pct = Field(gt=0, le=50)
-    risk_pct: Pct = Field(default=1.0, gt=0, le=10, description="% of equity lost at the stop")
+    risk_pct: Pct = Field(
+        default=1.0, gt=0, le=MAX_RISK_PCT, description="% of equity lost at the stop"
+    )
     equity: float = Field(gt=0)
 
 

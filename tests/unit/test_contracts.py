@@ -7,9 +7,15 @@ from pydantic import ValidationError
 
 from app.contracts.common import TIMEFRAME_MS
 from app.contracts.frames import candles_to_frame, frame_to_candles
-from app.contracts.journal import INSIGHT_MIN_SAMPLE, Evidence, Insight, TradeRecord
+from app.contracts.journal import (
+    INSIGHT_MIN_SAMPLE,
+    Evidence,
+    Insight,
+    SizeRequest,
+    TradeRecord,
+)
 from app.contracts.market import Candle
-from app.contracts.strategy import Strategy, StrategyParseOutput, rule_depth
+from app.contracts.strategy import MAX_RISK_PCT, Strategy, StrategyParseOutput, rule_depth
 
 RSI_LT_30 = {
     "kind": "cond",
@@ -87,6 +93,47 @@ def test_risk_sizing_requires_stop() -> None:
         Strategy.model_validate(
             {"entry": RSI_LT_30, "sizing": {"mode": "risk_pct", "value_pct": 1}}
         )
+
+
+def test_risk_sizing_is_capped_like_the_size_calculator() -> None:
+    """``size_position`` refuses risk above MAX_RISK_PCT, so the strategy must refuse it too."""
+    ok = {"entry": RSI_LT_30, "exits": {"stop_loss_pct": 1}}
+    Strategy.model_validate({**ok, "sizing": {"mode": "risk_pct", "value_pct": MAX_RISK_PCT}})
+    with pytest.raises(ValidationError, match="at most 10"):
+        Strategy.model_validate({**ok, "sizing": {"mode": "risk_pct", "value_pct": 20}})
+    # equity_pct sizing may still use up to 100 % of equity
+    Strategy.model_validate({**ok, "sizing": {"mode": "equity_pct", "value_pct": 100}})
+    with pytest.raises(ValidationError):
+        SizeRequest(entry_price=100, stop_pct=1, risk_pct=MAX_RISK_PCT + 0.1, equity=1000)
+
+
+def test_code_fills_atr_and_avg_volume_periods_but_not_sma() -> None:
+    def cond(left: dict) -> dict:
+        return {"kind": "cond", "left": left, "op": ">", "right": {"kind": "const", "value": 1}}
+
+    s = Strategy.model_validate(
+        {
+            "entry": {
+                "kind": "group",
+                "logic": "or",
+                "items": [
+                    cond({"kind": "indicator", "name": "atr"}),
+                    cond({"kind": "indicator", "name": "avg_volume", "period": None}),
+                ],
+            }
+        }
+    )
+    assert [i.left.period for i in s.entry.items] == [14, 20]  # type: ignore[union-attr]
+    with pytest.raises(ValidationError, match="SMA needs a period"):
+        Strategy.model_validate({"entry": cond({"kind": "indicator", "name": "sma"})})
+
+
+def test_exit_rule_depth_is_checked_too() -> None:
+    lvl2 = {"kind": "group", "logic": "or", "items": [RSI_LT_30, CLOSE_GT_EMA200]}
+    lvl3 = {"kind": "group", "logic": "and", "items": [lvl2, RSI_LT_30]}
+    deep = {"kind": "group", "logic": "and", "items": [lvl3, lvl2]}
+    with pytest.raises(ValidationError, match="nested"):
+        Strategy.model_validate({"entry": RSI_LT_30, "exits": {"exit_rule": deep}})
 
 
 def test_unknown_fields_are_rejected() -> None:
