@@ -87,6 +87,9 @@ class Settings(BaseSettings):
     llm_timeout_s: float = 8.0
     llm_proxy: str | None = None  # e.g. http://127.0.0.1:10808; separate from exchange_proxy
     llm_provider_order: tuple[ProviderName, ...] = ("groq", "gemini", "openrouter")
+    # Per-task override, e.g. {"strategy_parse": ["gemini", "groq"]}: those providers first,
+    # the rest of llm_provider_order after them. Set from the probe/eval results.
+    llm_task_providers: dict[str, tuple[ProviderName, ...]] = Field(default_factory=dict)
     groq_keys: SecretStr = SecretStr("")
     gemini_keys: SecretStr = SecretStr("")
     openrouter_keys: SecretStr = SecretStr("")

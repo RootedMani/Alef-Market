@@ -9,7 +9,15 @@ from pathlib import Path
 import httpx
 import pytest
 
-from app.llm.providers import BASE_URLS, OpenAICompatProvider, ProviderError, build_providers
+from app.llm.providers import (
+    BASE_URLS,
+    DEFAULT_RETRY_AFTER_S,
+    MAX_RETRY_AFTER_S,
+    OpenAICompatProvider,
+    ProviderError,
+    build_providers,
+    parse_retry_after,
+)
 from tests.conftest import make_settings
 from tests.fakes import FakeProvider
 
@@ -63,7 +71,14 @@ def test_sends_an_openai_chat_request_and_returns_the_text() -> None:
     ]
     assert body["temperature"] == 0.2
     assert "response_format" not in body
+    assert "max_tokens" not in body
     assert req.extensions["timeout"]["read"] == 4
+
+
+def test_max_tokens_is_sent_when_given() -> None:
+    p, seen = make(lambda r: httpx.Response(200, json=ok_body()))
+    p.complete("s", "u", json_mode=False, timeout_s=1, max_tokens=300)
+    assert json.loads(seen[0].content)["max_tokens"] == 300
 
 
 def test_json_mode_asks_for_a_json_object() -> None:
@@ -100,11 +115,95 @@ def test_429_carries_retry_after_seconds() -> None:
     assert exc.value.retry_after_s == 12.0
 
 
-def test_unparseable_retry_after_is_ignored() -> None:
-    p, _ = make(lambda r: httpx.Response(429, headers={"retry-after": "Wed, 21 Oct 2026"}))
+def test_429_without_retry_after_gets_the_default() -> None:
+    p, _ = make(lambda r: httpx.Response(429))
+    with pytest.raises(ProviderError) as exc:
+        p.complete("s", "u", json_mode=False, timeout_s=1)
+    assert exc.value.retry_after_s == DEFAULT_RETRY_AFTER_S == 30
+
+
+def test_other_errors_carry_no_retry_after() -> None:
+    p, _ = make(lambda r: httpx.Response(503, headers={"retry-after": "5"}))
     with pytest.raises(ProviderError) as exc:
         p.complete("s", "u", json_mode=False, timeout_s=1)
     assert exc.value.retry_after_s is None
+
+
+NOW = 1_792_497_600.0  # Tue, 20 Oct 2026 12:00:00 GMT
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("12", 12.0),
+        ("0", 0.0),
+        ("2.5", 2.5),
+        ("500", MAX_RETRY_AFTER_S),  # capped at 120 s
+        ("Tue, 20 Oct 2026 12:00:20 GMT", 20.0),  # HTTP-date, 20 s from now
+        ("Tue, 20 Oct 2026 11:59:00 GMT", 0.0),  # a date in the past: retry now
+        ("Wed, 21 Oct 2026 12:00:00 GMT", MAX_RETRY_AFTER_S),  # a day away: capped
+        ("Wed, 21 Oct 2026", DEFAULT_RETRY_AFTER_S),  # not a full HTTP-date
+        ("soon", DEFAULT_RETRY_AFTER_S),
+        ("-5", DEFAULT_RETRY_AFTER_S),
+        ("nan", DEFAULT_RETRY_AFTER_S),
+        ("", DEFAULT_RETRY_AFTER_S),
+        (None, DEFAULT_RETRY_AFTER_S),
+    ],
+)
+def test_parse_retry_after(value: str | None, expected: float) -> None:
+    assert parse_retry_after(value, now_s=NOW) == pytest.approx(expected)
+    assert MAX_RETRY_AFTER_S == 120
+
+
+JSON_400 = {"error": {"message": "response_format json_object is not supported by this model"}}
+
+
+def test_a_rejected_response_format_is_retried_once_without_it() -> None:
+    answers = iter([httpx.Response(400, json=JSON_400), httpx.Response(200, json=ok_body("{}"))])
+    p, seen = make(lambda r: next(answers))
+    assert p.complete("s", "u", json_mode=True, timeout_s=5) == "{}"
+    assert len(seen) == 2
+    assert "response_format" in json.loads(seen[0].content)
+    assert "response_format" not in json.loads(seen[1].content)
+
+
+def test_the_provider_remembers_that_json_mode_is_unsupported() -> None:
+    answers = iter([httpx.Response(400, json=JSON_400)] + [httpx.Response(200, json=ok_body())] * 2)
+    p, seen = make(lambda r: next(answers))
+    p.complete("s", "u", json_mode=True, timeout_s=5)
+    p.complete("s", "u", json_mode=True, timeout_s=5)
+    assert len(seen) == 3
+    assert "response_format" not in json.loads(seen[2].content)
+
+
+def test_a_second_400_after_dropping_response_format_is_an_error() -> None:
+    p, seen = make(lambda r: httpx.Response(400, json=JSON_400))
+    with pytest.raises(ProviderError) as exc:
+        p.complete("s", "u", json_mode=True, timeout_s=5)
+    assert exc.value.kind == "http_error" and exc.value.status == 400
+    assert len(seen) == 2  # retried once, not forever
+
+
+def test_an_unrelated_400_is_not_retried() -> None:
+    p, seen = make(lambda r: httpx.Response(400, json={"error": {"message": "context too long"}}))
+    with pytest.raises(ProviderError):
+        p.complete("s", "u", json_mode=True, timeout_s=5)
+    assert len(seen) == 1
+
+
+def test_a_400_mentioning_response_format_without_json_mode_is_not_retried() -> None:
+    p, seen = make(lambda r: httpx.Response(400, json=JSON_400))
+    with pytest.raises(ProviderError):
+        p.complete("s", "u", json_mode=False, timeout_s=5)
+    assert len(seen) == 1
+
+
+def test_the_retry_without_response_format_uses_the_time_left() -> None:
+    clock = iter([100.0, 103.0])  # the first request took 3 s
+    answers = iter([httpx.Response(400, json=JSON_400), httpx.Response(200, json=ok_body())])
+    p, seen = make(lambda r: next(answers), clock=lambda: next(clock))
+    p.complete("s", "u", json_mode=True, timeout_s=5)
+    assert seen[1].extensions["timeout"]["read"] == pytest.approx(2.0)
 
 
 @pytest.mark.parametrize(

@@ -5,12 +5,17 @@ Script a provider with the exact sequence of things it should do::
     p = FakeProvider("groq#1", ["rate_limited", '{"status": "ok", ...}'])
 
 Each call pops the next item: a string is returned as the model's answer; a FailureKind
-string ("rate_limited", "timeout", "http_error", "auth") raises ProviderError.
+string ("rate_limited", "timeout", "http_error", "auth") raises ProviderError; an exception
+instance (e.g. ``ProviderError("http_error", status=503)``) is raised as is. With ``clock`` and
+``latency_s`` set, every call advances the fake clock, so deadlines can be tested. Safe to call
+from many threads.
 """
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
+from typing import Any
 
 from app.llm.providers import FailureKind, ProviderError
 
@@ -18,21 +23,54 @@ _FAILURES: set[str] = {"rate_limited", "timeout", "http_error", "auth"}
 
 
 @dataclass
+class FakeClock:
+    """A monotonic clock that only moves when told to (``advance``)."""
+
+    now: float = 1_000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+@dataclass
 class FakeProvider:
     alias: str
-    script: list[str]
+    script: list[str | Exception]
+    clock: FakeClock | None = None
+    latency_s: float = 0.0
     calls: list[tuple[str, str]] = field(default_factory=list)
+    requests: list[dict[str, Any]] = field(default_factory=list)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     @property
     def provider(self) -> str:
         """``groq#2`` -> ``groq``: keys of one provider share its cooldowns."""
         return self.alias.split("#")[0]
 
-    def complete(self, system: str, user: str, *, json_mode: bool, timeout_s: float) -> str:
-        self.calls.append((system, user))
-        if not self.script:
+    def complete(
+        self,
+        system: str,
+        user: str,
+        *,
+        json_mode: bool,
+        timeout_s: float,
+        max_tokens: int | None = None,
+    ) -> str:
+        with self._lock:
+            self.calls.append((system, user))
+            self.requests.append(
+                {"json_mode": json_mode, "timeout_s": timeout_s, "max_tokens": max_tokens}
+            )
+            item = self.script.pop(0) if self.script else None
+            if self.clock is not None:
+                self.clock.advance(self.latency_s)
+        if item is None:
             raise ProviderError("http_error", "FakeProvider script exhausted")
-        item = self.script.pop(0)
+        if isinstance(item, Exception):
+            raise item
         if item in _FAILURES:
             kind: FailureKind = item  # type: ignore[assignment]
             raise ProviderError(kind, "scripted failure")

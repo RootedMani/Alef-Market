@@ -26,37 +26,10 @@ from app.llm.tasks import TASKS
 from app.llm.validate import OutputInvalid, validate_output
 from app.main import create_app
 from tests.conftest import make_settings
+from tests.llm_kit import PARSE_FACTS, PARSE_OUT, WHY_FACTS, WHY_OUT, parse_out
 
 PARSE = TASKS["strategy_parse"].prompt_id
 WHY = TASKS["why"].prompt_id
-
-PARSE_FACTS = {"text": "buy when rsi below 30, stop 1%"}
-PARSE_OUT = json.dumps(
-    {
-        "status": "ok",
-        "strategy": {
-            "entry": {
-                "kind": "cond",
-                "left": {"kind": "indicator", "name": "rsi"},
-                "op": "<",
-                "right": {"kind": "const", "value": 30},
-            },
-            "exits": {"stop_loss_pct": 1.0},
-        },
-        "unsupported": [],
-    }
-)
-
-
-def parse_out(**strategy_extra: Any) -> str:
-    """PARSE_OUT with extra keys inside the strategy (which extra='forbid' must reject)."""
-    data = json.loads(PARSE_OUT)
-    data["strategy"].update(strategy_extra)
-    return json.dumps(data)
-
-
-WHY_FACTS = {"move_pct": 2.43, "volume_multiple": 3.1}
-WHY_OUT = "قیمت BTC در این بازه 2.4% بالا رفت و حجم معاملات 3.1 برابر میانگین بود."
 
 
 # ---------- keys ----------

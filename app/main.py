@@ -14,6 +14,7 @@ from app.api.errors import install_error_handlers
 from app.api.routes import ROUTERS
 from app.db.engine import create_schema, make_engine, make_session_factory, session_scope
 from app.llm.cache import load_pinned_safely
+from app.llm.gateway import build_gateway
 from app.logging_setup import setup_logging
 from app.settings import Settings, get_settings
 from app.web.pages import STATIC_DIR
@@ -49,6 +50,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.engine = engine
     app.state.session_factory = make_session_factory(engine)
+    app.state.gateway = build_gateway(settings, app.state.session_factory)  # no network here
 
     install_error_handlers(app)
     for router in ROUTERS:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,31 @@ def test_every_task_has_its_prompt_file() -> None:
         assert system_prompt(task.name).strip()
         if task.output == "json":
             assert task.output_model is not None
+
+
+# sha256[:16] of each task's FULL system prompt (file + glossary + input rules). Nothing here
+# should change for an existing prompt id: cached and pinned answers are keyed by the id alone.
+# If this fails, copy the prompt to the next version and bump it in llm/tasks.py, then add the
+# new id's hash here.
+PROMPT_HASHES = {
+    "strategy_parse.v2": "ebb9d86db561893f",
+    "strategy_edit.v2": "a9b2e18c94b263b8",
+    "why.v2": "7dada32cf406ce8b",
+    "briefing.v2": "fe671168fdc24ca4",
+    "backtest_summary.v2": "0753d9fea9ab6aa4",
+    "insight.v2": "b8bc29aa159b9a28",
+    "trade_review.v2": "b56ddd90fcad6b80",
+}
+
+
+@pytest.mark.parametrize("name", list(TASKS))
+def test_a_prompt_never_changes_without_a_new_version(name: str) -> None:
+    task = TASKS[name]
+    digest = hashlib.sha256(system_prompt(name).encode()).hexdigest()[:16]
+    assert task.prompt_id in PROMPT_HASHES, f"new prompt {task.prompt_id}: add its hash {digest}"
+    assert PROMPT_HASHES[task.prompt_id] == digest, (
+        f"{task.prompt_id} changed: copy it to v{task.version + 1} instead of editing it"
+    )
 
 
 def test_prose_prompts_include_the_glossary() -> None:
@@ -42,7 +68,7 @@ def test_api_keys_parse_and_never_leak(tmp_path: Path) -> None:
 
 
 def test_fake_provider_follows_its_script() -> None:
-    p = FakeProvider("groq#1", ["rate_limited", "سلام"])
+    p = FakeProvider("groq#1", ["rate_limited", "سلام"])  # type: ignore[list-item]
     with pytest.raises(ProviderError) as exc:
         p.complete("sys", "user", json_mode=False, timeout_s=1)
     assert exc.value.kind == "rate_limited"

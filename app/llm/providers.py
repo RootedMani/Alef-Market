@@ -11,6 +11,10 @@ else (other statuses, network errors, a 200 without an answer) -> ``http_error``
 
 from __future__ import annotations
 
+import math
+import time
+from collections.abc import Callable
+from email.utils import parsedate_to_datetime
 from typing import Any, Literal, Protocol
 
 import httpx
@@ -27,6 +31,10 @@ FailureKind = Literal["rate_limited", "timeout", "http_error", "auth"]
 
 TEMPERATURE = 0.2
 _MAX_DETAIL_CHARS = 200
+DEFAULT_RETRY_AFTER_S = 30.0  # a 429 without a usable Retry-After header
+MAX_RETRY_AFTER_S = 120.0  # never park a key longer than this
+# A 400 whose body mentions one of these means "this model doesn't do JSON mode".
+_JSON_MODE_HINTS = ("response_format", "json_object", "json mode", "json_mode")
 
 
 class ProviderError(Exception):
@@ -54,7 +62,15 @@ class LLMProvider(Protocol):
     alias: str  # e.g. "groq#2"; the only identifier that may appear in logs
     provider: ProviderName
 
-    def complete(self, system: str, user: str, *, json_mode: bool, timeout_s: float) -> str:
+    def complete(
+        self,
+        system: str,
+        user: str,
+        *,
+        json_mode: bool,
+        timeout_s: float,
+        max_tokens: int | None = None,
+    ) -> str:
         """Return the raw text of the first choice, or raise ``ProviderError``."""
         ...
 
@@ -67,11 +83,33 @@ def _kind_for_status(status: int) -> FailureKind:
     return "http_error"
 
 
-def _retry_after(response: httpx.Response) -> float | None:
+def parse_retry_after(value: str | None, *, now_s: float) -> float:
+    """Seconds to wait from a ``Retry-After`` header: delta-seconds or an HTTP-date.
+
+    Missing or unparseable -> ``DEFAULT_RETRY_AFTER_S``; a date in the past -> 0; always capped
+    at ``MAX_RETRY_AFTER_S``.
+    """
+    if not value or not value.strip():
+        return DEFAULT_RETRY_AFTER_S
     try:
-        return float(response.headers["retry-after"])
-    except (KeyError, ValueError):
-        return None  # missing, or the HTTP-date form, which no provider sends in practice
+        seconds = float(value)
+    except ValueError:
+        try:
+            when = parsedate_to_datetime(value)
+        except (TypeError, ValueError, IndexError):
+            return DEFAULT_RETRY_AFTER_S
+        if when.tzinfo is None:
+            return DEFAULT_RETRY_AFTER_S
+        seconds = max(0.0, when.timestamp() - now_s)
+    if not math.isfinite(seconds) or seconds < 0:
+        return DEFAULT_RETRY_AFTER_S
+    return min(seconds, MAX_RETRY_AFTER_S)
+
+
+def _rejects_json_mode(response: httpx.Response) -> bool:
+    return response.status_code == 400 and any(
+        hint in response.text.lower() for hint in _JSON_MODE_HINTS
+    )
 
 
 class OpenAICompatProvider:
@@ -79,6 +117,10 @@ class OpenAICompatProvider:
 
     One ``httpx.Client`` per instance (connection reuse; safe across threads). ``proxy`` is
     ``ALEF_LLM_PROXY``; ``transport`` is for tests (``httpx.MockTransport``).
+
+    If the model rejects ``response_format`` (a 400 that says so), the call is retried once
+    without it, within the same timeout, and the instance stops sending it: the prompt and
+    Pydantic validation still enforce the JSON shape.
     """
 
     def __init__(
@@ -91,6 +133,7 @@ class OpenAICompatProvider:
         api_key: str,
         proxy: str | None = None,
         transport: httpx.BaseTransport | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.alias = alias
         self.provider = provider
@@ -99,6 +142,8 @@ class OpenAICompatProvider:
         self.proxy = proxy
         self._api_key = api_key
         self._client = httpx.Client(proxy=proxy, transport=transport)
+        self._clock = clock
+        self.json_mode_ok = True  # False once the model rejected response_format
 
     def __repr__(self) -> str:
         return f"OpenAICompatProvider(alias={self.alias!r}, model={self.model!r})"
@@ -109,8 +154,30 @@ class OpenAICompatProvider:
             text = text.replace(self._api_key, "***")
         return text[:_MAX_DETAIL_CHARS]
 
-    def complete(self, system: str, user: str, *, json_mode: bool, timeout_s: float) -> str:
+    def complete(
+        self,
+        system: str,
+        user: str,
+        *,
+        json_mode: bool,
+        timeout_s: float,
+        max_tokens: int | None = None,
+    ) -> str:
         """Return the first choice's text ('' if the model sent none), or raise ProviderError."""
+        started = self._clock()
+        use_format = json_mode and self.json_mode_ok
+        response = self._post(system, user, use_format, timeout_s, max_tokens)
+        if use_format and _rejects_json_mode(response):
+            self.json_mode_ok = False
+            left = timeout_s - (self._clock() - started)
+            if left <= 0:
+                raise ProviderError("timeout", "no time left to retry without response_format")
+            response = self._post(system, user, False, left, max_tokens)
+        return self._content(response)
+
+    def _post(
+        self, system: str, user: str, use_format: bool, timeout_s: float, max_tokens: int | None
+    ) -> httpx.Response:
         body: dict[str, Any] = {
             "model": self.model,
             "messages": [
@@ -119,10 +186,12 @@ class OpenAICompatProvider:
             ],
             "temperature": TEMPERATURE,
         }
-        if json_mode:
+        if use_format:
             body["response_format"] = {"type": "json_object"}
+        if max_tokens is not None:
+            body["max_tokens"] = max_tokens
         try:
-            response = self._client.post(
+            return self._client.post(
                 f"{self.base_url}/chat/completions",
                 json=body,
                 headers={"Authorization": f"Bearer {self._api_key}"},
@@ -134,13 +203,19 @@ class OpenAICompatProvider:
             detail = self._redact(f"{type(exc).__name__}: {exc}")
             raise ProviderError("http_error", detail) from None
 
+    def _content(self, response: httpx.Response) -> str:
         status = response.status_code
         if status != 200:
+            retry_after = None
+            if status == 429:
+                retry_after = parse_retry_after(
+                    response.headers.get("retry-after"), now_s=time.time()
+                )
             raise ProviderError(
                 _kind_for_status(status),
                 self._redact(f"HTTP {status}: {response.text}"),
                 status=status,
-                retry_after_s=_retry_after(response) if status == 429 else None,
+                retry_after_s=retry_after,
             )
         try:
             content = response.json()["choices"][0]["message"]["content"]

@@ -10,12 +10,18 @@ from sqlalchemy.orm import Session
 
 from app.api import mocks
 from app.contracts.auth import UserPublic
+from app.llm.gateway import LLMGateway
 from app.services.demo import demo_user
 from app.settings import Settings
 
 
 def get_app_settings(request: Request) -> Settings:
     return request.app.state.settings
+
+
+def get_gateway(request: Request) -> LLMGateway:
+    """The process-wide LLM gateway (its key cooldowns are shared by every request)."""
+    return request.app.state.gateway
 
 
 def get_db(request: Request) -> Iterator[Session]:
@@ -55,4 +61,5 @@ def get_current_user(
 
 SettingsDep = Annotated[Settings, Depends(get_app_settings)]
 DbDep = Annotated[Session, Depends(get_db)]
+GatewayDep = Annotated[LLMGateway, Depends(get_gateway)]
 UserDep = Annotated[UserPublic, Depends(get_current_user)]
