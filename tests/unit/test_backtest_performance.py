@@ -48,3 +48,36 @@ def test_two_months_of_5m_bars_in_under_three_seconds() -> None:
     print(f"\n5m backtest: {len(frame)} bars, {res.metrics.n_trades} trades, {elapsed:.3f} s")
     assert res.metrics.n_trades > 10, "the strategy must actually trade"
     assert elapsed < BUDGET_S
+
+
+def test_two_months_through_the_api_in_under_three_seconds(tmp_path) -> None:
+    """The full path: SQLite read of 86,400 1m rows -> 5m resample -> engine -> save -> JSON."""
+    from fastapi.testclient import TestClient
+
+    from app.data.store import upsert_candles
+    from app.db.engine import create_schema, make_engine, make_session_factory, session_scope
+    from app.main import create_app
+    from app.services.demo import ensure_demo_user
+    from tests.conftest import make_settings
+
+    settings = make_settings(tmp_path)
+    engine = make_engine(settings.db_path)
+    create_schema(engine)
+    with session_scope(make_session_factory(engine)) as s:
+        upsert_candles(
+            s,
+            settings.exchange,
+            "BTC/USDT",
+            "1m",
+            synthetic_1m("BTC/USDT", T0, BARS_5M * 5, seed=7),
+        )
+        ensure_demo_user(s)
+    engine.dispose()
+    body = {"strategy": HEAVY.model_dump(mode="json")}
+    with TestClient(create_app(settings)) as client:
+        start = time.perf_counter()
+        res = client.post("/api/backtest/run", json=body)
+        elapsed = time.perf_counter() - start
+    assert res.status_code == 200, res.text
+    print(f"\nAPI backtest: {res.json()['bars']} bars, {elapsed:.3f} s")
+    assert elapsed < BUDGET_S

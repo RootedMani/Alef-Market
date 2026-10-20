@@ -13,7 +13,7 @@ from app.contracts.briefing import Briefing
 from app.contracts.common import Symbol, Timeframe, TimestampMs
 from app.contracts.journal import JournalSummary, OpenTradeRequest, TradeRecord
 from app.contracts.strategy import EditRequest, ParseRequest, ParseResult
-from app.services import journal, trades
+from app.services import backtest, journal, trades
 from app.settings import Settings
 
 
@@ -38,7 +38,7 @@ def edit_strategy(db: Session, settings: Settings, req: EditRequest) -> ParseRes
 def run_backtest(
     db: Session, settings: Settings, req: BacktestRequest, *, user_id: int
 ) -> BacktestResult:
-    raise NotImplementedError("Week 2")
+    return backtest.run_backtest(db, settings, req, user_id=user_id)
 
 
 def open_trade(

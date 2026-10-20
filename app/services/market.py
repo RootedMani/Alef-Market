@@ -81,7 +81,7 @@ def _check_window(timeframe: Timeframe, start_ts: int, end_ts: int) -> None:
         )
 
 
-def _fetch(
+def fetch_candles(
     db: Session,
     settings: Settings,
     symbol: Symbol,
@@ -115,7 +115,7 @@ def get_candles(
 ) -> CandleSeries:
     """Closed bars with ``start_ts <= ts < end_ts`` plus, in live mode, the forming bar."""
     _check_window(timeframe, start_ts, end_ts)
-    batch, origin, stale = _fetch(db, settings, symbol, timeframe, start_ts, end_ts)
+    batch, origin, stale = fetch_candles(db, settings, symbol, timeframe, start_ts, end_ts)
     return CandleSeries(
         symbol=symbol,
         timeframe=timeframe,
@@ -144,7 +144,9 @@ def get_indicator(
     _check_window(timeframe, start_ts, end_ts)
     step = TIMEFRAME_MS[timeframe]
     lookback = warmup_bars(ref) * step
-    batch, _, _ = _fetch(db, settings, symbol, timeframe, max(0, start_ts - lookback), end_ts)
+    batch, _, _ = fetch_candles(
+        db, settings, symbol, timeframe, max(0, start_ts - lookback), end_ts
+    )
     series = operand_series(batch.frame, ref)
     series = series.loc[series.index >= start_ts]
     return IndicatorSeries(
