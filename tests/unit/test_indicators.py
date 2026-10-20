@@ -211,9 +211,31 @@ def test_warmup_bars() -> None:
     assert warmup_bars(PriceRef()) == 0
     assert warmup_bars(IndicatorRef(name="sma", period=20)) == 19
     assert warmup_bars(IndicatorRef(name="ema", period=20)) == 60  # 3x period to settle
-    assert warmup_bars(IndicatorRef(name="rsi", period=14)) == 14
-    assert warmup_bars(IndicatorRef(name="atr", period=14)) == 13
+    assert warmup_bars(IndicatorRef(name="rsi", period=14)) == 84  # 6x period (B17)
+    assert warmup_bars(IndicatorRef(name="atr", period=14)) == 84  # 6x period (B17)
     assert warmup_bars(IndicatorRef(name="avg_volume", period=20)) == 19
+
+
+@pytest.mark.parametrize("name", ["rsi", "atr", "ema"])
+@pytest.mark.parametrize("period", [2, 14, 50])
+def test_warmup_makes_values_independent_of_where_history_starts(
+    walk: pd.DataFrame, name: str, period: int
+) -> None:
+    """With only ``warmup_bars`` of history (the least the backtester and the chart ever load),
+    RSI/ATR/EMA match the full-history value: within 0.5 RSI points, or 0.5 % for ATR and EMA.
+
+    The recursive indicators remember their seed: with RSI(14) after only 14 bars the error was
+    up to 21 RSI points on this walk (B17). Measured worst case at 6p: 0.11 points, 0.10 %.
+    """
+    ref = IndicatorRef(name=name, period=period)
+    w = warmup_bars(ref)
+    full = operand_series(walk, ref).to_numpy()
+    for t in range(w, len(walk), 5):
+        short = operand_series(walk.iloc[t - w : t + 1], ref).to_numpy()[-1]
+        if name == "rsi":
+            assert abs(short - full[t]) < 0.5, t
+        else:
+            assert abs(short / full[t] - 1) < 0.005, t
 
 
 def test_warmup_bars_covers_the_nans(walk: pd.DataFrame) -> None:

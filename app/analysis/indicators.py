@@ -11,6 +11,9 @@ TradingView's built-ins except that EMA is seeded with an SMA (TA-Lib style):
 - **EMA(p)**: ``alpha = 2/(p+1)``; seed = SMA of the first ``p`` values (index ``p-1``), then
   ``ema_t = alpha*x_t + (1-alpha)*ema_{t-1}``. The seed's influence fades with time, so the
   backtester skips ``3p`` bars (``warmup_bars``) before trusting it.
+- RSI and ATR are recursive too (Wilder, ``alpha = 1/p``, slower than EMA), so they get ``6p``
+  (B17, amends C4). Measured: after only ``p`` bars RSI(14) can differ by 20-30 RSI points
+  depending on where the history starts; after ``6p`` by < 0.25 points (ATR < 0.1 %).
 - **RSI(p)**, Wilder: average gain and average loss of the close-to-close changes, smoothed with
   **Wilder's smoothing** ``avg_t = (avg_{t-1}*(p-1) + x_t)/p`` (an EMA with ``alpha = 1/p``,
   seeded with the plain mean of the first ``p`` changes). First value at index ``p`` (bar 0 has
@@ -125,16 +128,19 @@ def operand_series(frame: pd.DataFrame, ref: IndicatorRef | PriceRef) -> pd.Seri
 def warmup_bars(ref: IndicatorRef | PriceRef) -> int:
     """How many leading bars the backtester must skip for this operand.
 
-    That is the number of NaN bars, except EMA, which gets ``3 x period`` so its SMA seed
-    has faded (after 3p bars the seed's weight is ``(1-alpha)^(3p)`` ~ 0.25 %).
+    That is the number of NaN bars for SMA and avg_volume (exact after ``period`` values). The
+    recursive indicators get enough bars for their seed to fade, so the value no longer depends
+    on where the history starts (``test_warmup_makes_values_independent_of_where_history_starts``):
+    EMA ``3 x period`` (C4: the SMA seed's weight is then ~ 0.25 %), RSI and ATR ``6 x period``
+    (B17: Wilder's ``alpha = 1/p`` fades about half as fast, and their seed can be far off).
     """
     if isinstance(ref, PriceRef):
         return 0
     return {
         "sma": ref.period - 1,
         "ema": 3 * ref.period,
-        "rsi": ref.period,
-        "atr": ref.period - 1,
+        "rsi": 6 * ref.period,
+        "atr": 6 * ref.period,
         "avg_volume": ref.period - 1,
     }[ref.name]
 

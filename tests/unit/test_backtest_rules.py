@@ -122,10 +122,13 @@ def test_or_group_does_not_turn_nan_into_true() -> None:
 
 def test_max_warmup_per_operand() -> None:
     assert max_warmup(cond(price(), ">", const(1))) == 0
-    assert max_warmup(cond(ind("rsi"), "<", const(30))) == 14  # first RSI at bar 14
+    assert max_warmup(cond(ind("rsi"), "<", const(30))) == 84  # 6 x period (B17)
     assert max_warmup(cond(price(), ">", ind("sma", 20))) == 19
     assert max_warmup(cond(price(), ">", ind("ema", 200))) == 600  # 3 x period (C4)
-    assert max_warmup(cond(ind("atr"), ">", ind("avg_volume", 30))) == 29
+    assert (
+        max_warmup(cond(ind("atr", 3), ">", ind("avg_volume", 30))) == 29
+    )  # avg_volume 29 > ATR 18
+    assert max_warmup(cond(ind("atr"), ">", ind("avg_volume", 30))) == 84
 
 
 def test_max_warmup_adds_one_bar_for_a_crossing() -> None:
@@ -141,15 +144,20 @@ def test_max_warmup_of_nested_groups_is_the_maximum() -> None:
         group("or", cond(ind("rsi"), "<", const(30)), cond(price(), ">", ind("ema", 50))),
         cond(price(), "crosses_above", ind("sma", 20)),
     )
-    assert max_warmup(rule) == 150
+    assert max_warmup(rule) == 150  # EMA(50) 150 > RSI(14) 84 > SMA(20) crossing 20
 
 
 def test_strategy_warmup_includes_the_exit_rule() -> None:
     s = strategy(
         cond(ind("rsi"), "<", const(30)),
+        exit_rule=cond(price(), "crosses_below", ind("ema", 40)),
+    )
+    assert strategy_warmup(s) == 121  # the exit rule's EMA(40) crossing 3*40 + 1 > RSI's 84
+    s = strategy(
+        cond(ind("rsi"), "<", const(30)),
         exit_rule=cond(price(), "crosses_below", ind("ema", 20)),
     )
-    assert strategy_warmup(s) == 61
+    assert strategy_warmup(s) == 84  # RSI(14) 84 > EMA(20) crossing 3*20 + 1 = 61
 
 
 def test_every_value_after_the_warmup_is_defined(walk: pd.DataFrame) -> None:
