@@ -45,7 +45,9 @@ def now_ms() -> int:
 
 def live_client(settings: Settings) -> Any:
     """The ccxt client for live mode (patched in tests with ``tests.fakes.FakeExchange``)."""
-    return make_client(settings.exchange, settings.exchange_timeout_ms, settings.exchange_proxy)
+    return make_client(
+        settings.exchange, settings.exchange_timeout_ms, settings.proxy_for("exchange")
+    )
 
 
 def load_replay_days(settings: Settings) -> list[ReplayDay]:

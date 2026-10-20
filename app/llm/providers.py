@@ -253,7 +253,7 @@ def build_providers(settings: Settings) -> list[OpenAICompatProvider]:
                         base_url=BASE_URLS[name],
                         model=models[name],
                         api_key=key.value,
-                        proxy=settings.llm_proxy,
+                        proxy=settings.proxy_for("llm"),
                     )
                 )
             except (ValueError, ImportError, TypeError) as exc:

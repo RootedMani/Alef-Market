@@ -31,7 +31,7 @@ import pandas as pd
 
 from app.data.clean import MAX_FILL_BARS, GapTooLongError, fill_gaps, find_gaps, rows_to_frame
 from app.data.seed import write_seed
-from app.settings import ROOT_DIR
+from app.settings import ROOT_DIR, get_settings
 
 M = 60_000
 DAY = 86_400_000
@@ -145,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     end_ts = int(end_day.timestamp() * 1000)
     start_ts = int((end_day - timedelta(days=args.days)).timestamp() * 1000)
-    client = make_client(args.exchange, 20_000, args.proxy)
+    client = make_client(args.exchange, 20_000, args.proxy or get_settings().proxy_for("exchange"))
     print(f"recording {args.exchange} 1m {_iso(start_ts)} -> {_iso(end_ts)} UTC")
 
     manifest_path = args.out / "manifest.json"

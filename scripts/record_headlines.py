@@ -17,7 +17,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from app.news.rss import FEEDS, HeadlineIn, backfill, make_http_client, read_jsonl, write_jsonl
-from app.settings import ROOT_DIR
+from app.settings import ROOT_DIR, get_settings
 
 OUT = ROOT_DIR / "data" / "news" / "headlines.jsonl"
 MANIFEST = ROOT_DIR / "data" / "market" / "manifest.json"
@@ -70,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"recording headlines since {_day(since)} UTC into {args.out}")
     failed = 0
-    with make_http_client(args.proxy) as client:
+    with make_http_client(args.proxy or get_settings().proxy_for("news")) as client:
         for feed in FEEDS:
             try:
                 items = backfill(feed, client, since, max_pages=args.max_pages)

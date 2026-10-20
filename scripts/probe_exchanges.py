@@ -112,19 +112,15 @@ def probe_one(exchange: Any, now_ms: int, history_days: int = HISTORY_DAYS) -> P
 
 
 def make_ccxt_exchange(exchange_id: str, timeout_ms: int, proxy: str | None) -> Any:
-    """Build a public (no key) ccxt exchange with a timeout and an optional HTTPS proxy."""
-    import ccxt  # imported here so the pure helpers above stay importable without ccxt
+    """Build a public (no key) ccxt exchange with a timeout and an optional HTTPS proxy.
 
-    options: dict[str, Any] = {"timeout": timeout_ms, "enableRateLimit": True}
-    if proxy:
-        options["httpsProxy"] = proxy
-    ex = getattr(ccxt, exchange_id)(options)
-    # Spot markets only: futures endpoints can be blocked separately and would make
-    # load_markets() fail even though spot candles work.
-    fetch_markets = ex.options.get("fetchMarkets")
-    if isinstance(fetch_markets, dict) and "types" in fetch_markets:
-        ex.options["fetchMarkets"] = {**fetch_markets, "types": ["spot"]}
-    return ex
+    The app's own builder: spot markets only (futures endpoints can be blocked separately and
+    would make load_markets() fail even though spot candles work), shell proxy variables off.
+    """
+    # imported here so the pure helpers above stay importable without ccxt
+    from app.data.ccxt_source import make_client
+
+    return make_client(exchange_id, timeout_ms, proxy)
 
 
 def run(
@@ -156,14 +152,21 @@ def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     p.add_argument("--label", required=True, help="network name, e.g. home, home-vpn, venue")
     p.add_argument("--exchanges", default=",".join(CANDIDATES))
-    p.add_argument("--proxy", default=None, help="HTTPS proxy URL, e.g. http://127.0.0.1:10809")
+    p.add_argument(
+        "--proxy",
+        default=None,
+        help="HTTPS proxy URL, e.g. http://127.0.0.1:10809; default ALEF_EXCHANGE_PROXY",
+    )
     p.add_argument("--timeout-ms", type=int, default=10_000)
     args = p.parse_args(argv)
+    from app.settings import get_settings
+
+    proxy = args.proxy or get_settings().proxy_for("exchange")
 
     ids = [x.strip() for x in args.exchanges.split(",") if x.strip()]
     results = run(
         ids,
-        factory=lambda x: make_ccxt_exchange(x, args.timeout_ms, args.proxy),
+        factory=lambda x: make_ccxt_exchange(x, args.timeout_ms, proxy),
         now=lambda: int(time.time() * 1000),
     )
     print(format_table(results))
@@ -174,7 +177,7 @@ def main(argv: list[str] | None = None) -> None:
     report = {
         "label": args.label,
         "run_at_utc": datetime.now(UTC).isoformat(timespec="seconds"),
-        "proxy_used": bool(args.proxy),
+        "proxy_used": bool(proxy),
         "results": [asdict(r) for r in results],
     }
     out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

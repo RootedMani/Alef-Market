@@ -48,10 +48,19 @@ def _now_ms() -> int:
 
 @lru_cache(maxsize=4)
 def make_client(exchange_id: str, timeout_ms: int = 10_000, proxy: str | None = None) -> Any:
-    """A public (no API key) ccxt client, spot markets only. Created lazily, never at startup."""
+    """A public (no API key) ccxt client, spot markets only. Created lazily, never at startup.
+
+    ``proxy`` (``ALEF_EXCHANGE_PROXY``) is the only proxy: the requests session never reads
+    the shell's ``HTTP(S)_PROXY``/``ALL_PROXY``. ccxt already defaults to that; we pin it.
+    """
     import ccxt
 
-    options: dict[str, Any] = {"timeout": timeout_ms, "enableRateLimit": True}
+    options: dict[str, Any] = {
+        "timeout": timeout_ms,
+        "enableRateLimit": True,
+        "trust_env": False,
+        "requests_trust_env": False,
+    }
     if proxy:
         options["httpsProxy"] = proxy
     client = getattr(ccxt, exchange_id)(options)

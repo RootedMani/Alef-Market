@@ -111,11 +111,14 @@ def parse_feed(content: bytes, source: str) -> list[HeadlineIn]:
 
 
 def make_http_client(proxy: str | None = None, timeout_s: float = 15.0) -> httpx.Client:
+    """``proxy`` is ``settings.proxy_for("news")`` and the only one: the shell's
+    ``HTTP(S)_PROXY``/``ALL_PROXY`` are ignored (``trust_env=False``)."""
     return httpx.Client(
         headers={"User-Agent": USER_AGENT},
         timeout=timeout_s,
         follow_redirects=True,
         proxy=proxy,
+        trust_env=False,
     )
 
 

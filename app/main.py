@@ -45,6 +45,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             settings.mock_api,
             settings.db_path,
         )
+        logger.info("proxies: %s", settings.proxy_summary())  # scheme and host only
         yield
         engine.dispose()
         llm_engine.dispose()

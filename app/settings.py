@@ -14,7 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Literal, get_args
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -22,6 +23,27 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
 ProviderName = Literal["groq", "gemini", "openrouter"]
+ProxyClient = Literal["llm", "exchange", "news"]
+PROXY_SCHEMES = ("http", "https", "socks5", "socks5h")
+
+
+def describe_proxy(proxy: str | None) -> str:
+    """``scheme://host`` of a proxy URL for logs: never its credentials, port or path.
+
+    ``"none"`` when unset, ``"invalid"`` when the scheme isn't one we know (a URL without a
+    scheme, like ``user:pw@host:1``, would otherwise parse ``user`` as the scheme).
+    """
+    if not proxy:
+        return "none"
+    try:
+        parts = urlsplit(proxy)
+        host = parts.hostname
+    except ValueError:
+        return "invalid"
+    scheme = parts.scheme.lower()
+    if scheme not in PROXY_SCHEMES or not host:
+        return "invalid"
+    return f"{scheme}://{host}"
 
 
 @dataclass(frozen=True)
@@ -77,6 +99,9 @@ class Settings(BaseSettings):
     replay_exchange: str | None = None  # whose seed files replay reads; None = same as exchange
     symbols: tuple[str, ...] = ("BTC/USDT", "ETH/USDT")
 
+    # --- news ---
+    news_proxy: str | None = None  # e.g. http://127.0.0.1:10809 if the RSS feeds need one
+
     # --- auth ---
     session_cookie_name: str = "alef_session"
     session_days: int = 14
@@ -114,6 +139,23 @@ class Settings(BaseSettings):
             "openrouter": self.openrouter_keys,
         }[provider]
         return _split_keys(provider, raw)
+
+    def proxy_for(self, client: ProxyClient) -> str | None:
+        """The proxy one HTTP client uses: its own ``ALEF_*_PROXY``, or None.
+
+        Every client is built with this and with the environment lookup off, so the shell's
+        ``HTTP_PROXY``/``HTTPS_PROXY``/``ALL_PROXY`` never reach it.
+        """
+        proxy = {
+            "llm": self.llm_proxy,
+            "exchange": self.exchange_proxy,
+            "news": self.news_proxy,
+        }[client]
+        return proxy or None
+
+    def proxy_summary(self) -> str:
+        """``llm=http://127.0.0.1 exchange=none news=none``: for the startup log."""
+        return " ".join(f"{c}={describe_proxy(self.proxy_for(c))}" for c in get_args(ProxyClient))
 
 
 @lru_cache
