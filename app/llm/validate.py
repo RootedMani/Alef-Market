@@ -17,6 +17,8 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
+from app.llm.tasks import PromptTask
+
 PERSIAN_DIGITS = "۰۱۲۳۴۵۶۷۸۹"
 ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩"
 _TO_LATIN = str.maketrans(PERSIAN_DIGITS + ARABIC_DIGITS, "0123456789" * 2)
@@ -162,3 +164,21 @@ def prose_problems(
     if bad:
         problems.append(f"numbers not in the facts: {sorted(set(bad))}")
     return problems
+
+
+# ---------- one entry point for every task ----------
+
+
+def validate_output(task: PromptTask, raw: str, facts: Any) -> BaseModel | str:
+    """The validated value of ``raw`` for ``task``, or raise OutputInvalid.
+
+    The gateway (live answers, cache hits) and the pinned-file loader both call this, so a
+    pinned demo answer passes exactly the checks a live answer must pass.
+    """
+    if task.output == "json":
+        assert task.output_model is not None
+        return parse_json_output(raw, task.output_model)
+    problems = prose_problems(raw, facts, max_chars=task.max_chars)
+    if problems:
+        raise OutputInvalid(problems)
+    return raw.strip()

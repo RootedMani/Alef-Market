@@ -285,7 +285,7 @@ The demo flow from the frontend's side: load `config` → load the replay day's 
 | `candles` | (exchange, symbol, timeframe, ts) | **closed 1m bars only**. 5m, 1h and 1d are resampled from 1m, never stored or fetched (A6, amended by C2) |
 | `headlines` | id; url unique (canonical: `utm_*` and `#fragment` stripped) | RSS titles, links, times, symbol tags |
 | `trades` | id; index (user_id, entry_ts) | mirrors `TradeRecord` (seed + paper) |
-| `llm_cache` | `key` = sha256(prompt_id + canonical facts JSON) | validated outputs; `pinned` = hand-reviewed demo text, never overwritten |
+| `llm_cache` | `key` = sha256(prompt_id + canonical facts JSON: sorted keys, floats rounded to 9 decimals) | validated outputs; `pinned` = hand-reviewed demo text, never overwritten by live output. Pinned rows are also committed in `data/llm/pinned.jsonl` (reset-demo deletes the DB) and loaded at startup and by reset-demo: each line is re-validated with the live validators (invalid lines are skipped with a WARNING), and the DB's pinned set is made equal to the file's |
 | `llm_calls` | id | one row per provider attempt: key alias, outcome, latency (usage counter + "who answered") |
 | `backtest_runs` | id | simple per-user history |
 

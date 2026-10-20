@@ -12,7 +12,8 @@ from fastapi.staticfiles import StaticFiles
 from app import __version__
 from app.api.errors import install_error_handlers
 from app.api.routes import ROUTERS
-from app.db.engine import create_schema, make_engine, make_session_factory
+from app.db.engine import create_schema, make_engine, make_session_factory, session_scope
+from app.llm.cache import load_pinned_safely
 from app.logging_setup import setup_logging
 from app.settings import Settings, get_settings
 from app.web.pages import STATIC_DIR
@@ -31,6 +32,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         create_schema(engine)  # no network calls at startup: the demo must boot offline
+        with session_scope(app.state.session_factory) as session:
+            load_pinned_safely(session, settings)  # reset-demo deletes the DB; the file doesn't
         logger.info(
             "Alef Market %s started (env=%s, market=%s, mock_api=%s, db=%s)",
             __version__,
