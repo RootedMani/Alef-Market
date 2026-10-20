@@ -28,10 +28,11 @@ def ts(i: int) -> int:
     return T0 + i * STEP
 
 
-def bars(rows: list[tuple[float, float, float, float]], volume: float = 1.0) -> pd.DataFrame:
-    """A strict 5m frame from ``(open, high, low, close)`` rows, one row per bar."""
+def bars(rows: list[tuple[float, ...]], volume: float = 1.0) -> pd.DataFrame:
+    """A strict 5m frame from ``(open, high, low, close[, volume])`` rows, one row per bar."""
+    full = [(*r, volume) if len(r) == 4 else r for r in rows]
     frame = pd.DataFrame(
-        [(ts(i), o, h, low, c, volume) for i, (o, h, low, c) in enumerate(rows)],
+        [(ts(i), *r) for i, r in enumerate(full)],
         columns=["ts", "open", "high", "low", "close", "volume"],
     ).set_index("ts")
     return validate_frame(frame.astype("float64"), timeframe="5m")
