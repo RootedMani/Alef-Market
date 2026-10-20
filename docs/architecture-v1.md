@@ -322,7 +322,7 @@ Startup makes **no network calls**, so the app boots with Wi-Fi off. On demo day
 - **If a key leaks** (for example, committed by mistake): revoke it at the provider first, then remove it from Git history. Rotating is faster than history surgery.
 - Tests build `Settings(_env_file=None, …)`, so your real `.env` never affects them.
 
-Main settings: `env`, `log_level`, `mock_api`, `db_path`, `data_dir`, `market_mode`, `exchange`, `exchange_timeout_ms` (10 s), `exchange_proxy`, `replay_exchange`, `llm_cache_mode`, `llm_timeout_s` (8 s), `llm_provider_order`, `*_keys`, `*_model`, `session_days`, `cookie_secure`, `display_tz`.
+Main settings: `env`, `log_level`, `mock_api`, `db_path`, `data_dir`, `market_mode`, `exchange`, `exchange_timeout_ms` (10 s), `exchange_proxy`, `replay_exchange`, `llm_cache_mode`, `llm_timeout_s` (8 s), `llm_proxy` (LLM APIs only; separate from `exchange_proxy`), `llm_provider_order`, `*_keys`, `*_model`, `session_days`, `cookie_secure`, `display_tz`.
 
 ---
 

@@ -23,6 +23,11 @@ class FakeProvider:
     script: list[str]
     calls: list[tuple[str, str]] = field(default_factory=list)
 
+    @property
+    def provider(self) -> str:
+        """``groq#2`` -> ``groq``: keys of one provider share its cooldowns."""
+        return self.alias.split("#")[0]
+
     def complete(self, system: str, user: str, *, json_mode: bool, timeout_s: float) -> str:
         self.calls.append((system, user))
         if not self.script:

@@ -85,6 +85,7 @@ class Settings(BaseSettings):
     # --- LLM gateway ---
     llm_cache_mode: Literal["prefer", "fallback", "only"] = "fallback"
     llm_timeout_s: float = 8.0
+    llm_proxy: str | None = None  # e.g. http://127.0.0.1:10808; separate from exchange_proxy
     llm_provider_order: tuple[ProviderName, ...] = ("groq", "gemini", "openrouter")
     groq_keys: SecretStr = SecretStr("")
     gemini_keys: SecretStr = SecretStr("")
