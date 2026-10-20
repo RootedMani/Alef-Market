@@ -329,6 +329,43 @@ def test_an_entry_signal_on_the_last_bar_is_not_filled() -> None:
     assert equity(res) == [10_000, 10_000]
 
 
+def test_a_signal_on_the_bar_that_stopped_out_enters_at_the_next_open() -> None:
+    """Stop 2 %. B2: an entry signal counts on any bar where we are flat at the close.
+
+    bar 1  fill 100, qty 100, stop 98
+    bar 2  low 97 hits the stop: exit 98, pnl -200, equity 9800. Flat at the close, and this
+           bar carries the entry signal (volume 2) -> new entry at bar 3's open
+    bar 3  fill 97.5, qty = 9800 / 97.5 = 100.51282051282051, stop 95.55 (not hit)
+    bar 4  last bar: end_of_data at the close 99: pnl = qty * 1.5 = 150.76923076923077
+    """
+    res = run(
+        [
+            (100, 100, 100, 100, 2),
+            (100, 101, 99, 100),
+            (100, 100, 97, 97.5, 2),
+            (97.5, 98, 97, 97.5),
+            (97.5, 99, 97.5, 99),
+        ],
+        stop=2,
+    )
+    a, b = res.trades
+    check_trade(
+        a, entry_bar=1, entry=100, exit_bar=2, exit=98, reason="stop", qty=100, pnl=-200, r=-1
+    )
+    q = 9_800 / 97.5
+    check_trade(
+        b,
+        entry_bar=3,
+        entry=97.5,
+        exit_bar=4,
+        exit=99,
+        reason="end_of_data",
+        qty=q,
+        pnl=q * 1.5,
+        r=1.5 / (97.5 * 0.02),
+    )
+
+
 def test_re_entry_waits_for_a_flat_close_and_sizing_compounds() -> None:
     """Entry ``close > 0`` (true on every bar), time exit after 1 bar.
 

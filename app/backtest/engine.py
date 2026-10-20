@@ -168,10 +168,12 @@ def run_backtest(frame: pd.DataFrame, request: BacktestRequest) -> BacktestResul
                 close_position(stamps[i], decision.price, decision.reason)
             elif decision is not None:
                 pending_exit = decision.reason
-        elif entry_list[i] and i < last:
+
+        # 3. at the close: flat (even if a stop/target closed us inside this bar) -> may enter
+        if pos is None and entry_list[i] and i < last:
             pending_entry = True
 
-        # 3. the last bar: nothing may stay open
+        # 4. the last bar: nothing may stay open
         if i == last and pos is not None:
             close_position(stamps[i], closes[i], "end_of_data")
             pending_exit = None
