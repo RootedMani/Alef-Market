@@ -217,3 +217,42 @@ def test_an_injection_that_obeys_with_a_valid_strategy_ends_unclear(factory: Any
     gw, _ = gateway(factory, obeyed, obeyed)
     out = gw.run_json(PARSE, {"text": text}, fallback=unclear)
     assert out.value.status == "unclear" and out.meta.source == "template"
+
+
+# ---------- indicator names: only the ones the user named ----------
+
+CLOSE_GT_EMA = {
+    "kind": "cond",
+    "left": {"kind": "price", "field": "close"},
+    "op": ">",
+    "right": {"kind": "indicator", "name": "ema", "period": 50},
+}
+
+
+def test_an_indicator_the_user_did_not_name_is_refused() -> None:
+    found = problems(PARSE, answer({"entry": CLOSE_GT_EMA}), {"text": "buy above the 50 line"})
+    assert any("indicators the user did not name: [EMA]" in p for p in found)
+
+
+def test_picking_sma_or_ema_for_a_bare_moving_average_is_refused() -> None:
+    text = "buy when price is above the 50 moving average"
+    assert problems(PARSE, answer({"entry": CLOSE_GT_EMA}), {"text": text})
+
+
+@pytest.mark.parametrize(
+    "text", ["buy above EMA-50", "buy above ema50", "قیمت بالای میانگین متحرک نمایی ۵۰ بخر"]
+)
+def test_any_spelling_of_the_name_counts(text: str) -> None:
+    assert parse(text, answer({"entry": CLOSE_GT_EMA})).status == "ok"
+
+
+def test_an_edit_checks_only_the_indicators_it_adds() -> None:
+    old = {**OLD, "entry": {"kind": "group", "logic": "and", "items": [OLD["entry"], CLOSE_GT_EMA]}}
+    kept = {**old, "exits": {"stop_loss_pct": 2.0}}
+    out = validate_output(EDIT, answer(kept), edit_facts("make the stop 2%", old))
+    assert out.status == "ok"  # type: ignore[union-attr]
+
+    atr = {"kind": "indicator", "name": "atr"}
+    added = {**old, "exits": {"stop_loss_pct": 1.0, "exit_rule": {**CLOSE_GT_EMA, "right": atr}}}
+    found = problems(EDIT, answer(added), edit_facts("also exit when the close is above it", old))
+    assert any("[ATR]" in p for p in found)

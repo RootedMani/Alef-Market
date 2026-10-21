@@ -3,8 +3,9 @@
 ``tests/evals/strategy_prompts.jsonl``: 10 Persian + 10 English cases with the expected status
 and, for "ok", the strategy as the model should write it (no defaults). The live run is
 ``tests/evals/test_strategy_evals.py`` (``pytest -m live``). Here: the set is well formed, its
-expected answers pass the same checks a live answer must pass, and the indicator-name check
-(Latin names only vs the alias table) refuses none of its ok cases.
+expected answers pass the same checks a live answer must pass (number grounding and the
+indicator-name check, which was measured here before it was wired in), and Latin names alone
+would have refused 6 of the 14 ok cases.
 """
 
 from __future__ import annotations

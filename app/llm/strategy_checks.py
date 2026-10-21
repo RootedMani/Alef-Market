@@ -3,7 +3,9 @@
 They read the RAW JSON the model wrote, before Pydantic fills defaults: a model that writes
 ``"period": 14`` for "RSI < 30" guessed, even though 14 is what code would fill in. Matching
 is exact (``30`` does not match a typed ``30.5``) and keeps the sign. ``version: 1`` is a
-schema constant, not a number.
+schema constant, not a number. RSI, EMA, SMA and ATR must also be named in the text, in any
+spelling of ``INDICATOR_ALIASES`` (an edit: only the indicators it adds), so a model can't pick
+SMA or EMA for a bare "moving average" or slip in a filter the user never asked for.
 
 Each check returns a problem list; ``validate.validate_output`` raises on a non-empty one, so
 the gateway retries once with the problems and never serves (or caches) a failing answer.
@@ -62,13 +64,15 @@ def parse_problems(data: Any, value: BaseModel, facts: Any) -> list[str]:
     problems = _common(value)
     if problems or getattr(value, "status", None) != "ok":
         return problems
-    pool = text_numbers(normalize_text(str(_facts(facts).get("text", ""))))
+    text = str(_facts(facts).get("text", ""))
+    pool = text_numbers(normalize_text(text))
     missing = sorted({n for n in strategy_numbers(data["strategy"]) if n not in pool})
     if missing:
         problems.append(
             f"numbers not in the user's text: {_fmt(missing)}. Never write a number the user "
             "did not write: omit defaults (RSI/ATR/average volume period, sizing, exits)"
         )
+    problems += _unnamed(strategy_indicators(data["strategy"]), text, "the user")
     return problems
 
 
@@ -80,17 +84,44 @@ def edit_problems(data: Any, value: BaseModel, facts: Any) -> list[str]:
     given = _facts(facts)
     old = Strategy.model_validate(given["strategy"]).model_dump(mode="json")
     added = Counter(strategy_numbers(data["strategy"])) - Counter(strategy_numbers(old))
-    pool = text_numbers(normalize_text(str(given.get("instruction", ""))))
+    instruction = str(given.get("instruction", ""))
+    pool = text_numbers(normalize_text(instruction))
     missing = sorted({n for n in added if n not in pool})
     if missing:
         problems.append(
             f"numbers not in the instruction: {_fmt(missing)}. Copy the current strategy's "
             "numbers unchanged and write no number the instruction does not give"
         )
+    new_names = strategy_indicators(data["strategy"]) - strategy_indicators(old)
+    problems += _unnamed(new_names, instruction, "the instruction")
     return problems
 
 
-# ---------- indicator names (proposal: measured on the eval set before it is wired in) ----------
+def strategy_indicators(node: Any) -> set[str]:
+    """Indicator names in a strategy's JSON."""
+    if isinstance(node, dict):
+        found = {node["name"]} if node.get("kind") == "indicator" and "name" in node else set()
+        for value in node.values():
+            found |= strategy_indicators(value)
+        return found
+    if isinstance(node, list):
+        return set().union(*(strategy_indicators(v) for v in node))
+    return set()
+
+
+def _unnamed(names: set[str], text: str, who: str) -> list[str]:
+    """RSI/EMA/SMA/ATR in ``names`` that ``text`` doesn't name in any spelling."""
+    missing = sorted((names & CHECKED_INDICATORS) - named_indicators(text))
+    if not missing:
+        return []
+    listed = ", ".join(n.upper() for n in missing)
+    return [
+        f"indicators {who} did not name: [{listed}]. Use only the indicators {who} named; "
+        'a moving average not called simple or exponential is status "unclear"'
+    ]
+
+
+# ---------- indicator names: RSI/EMA/SMA/ATR must be named (any spelling) ----------
 
 _LATIN_TOKENS = {"rsi": "rsi", "ema": "ema", "sma": "sma", "atr": "atr"}
 # Spellings per indicator, matched with case, spaces, hyphens and ZWNJ ignored, آ read as ا.
