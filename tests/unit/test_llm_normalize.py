@@ -69,6 +69,7 @@ def test_detected_lang_is_decided_by_the_script_ratio(text: str, lang: str) -> N
     [
         ("RSI زیر 30، حد ضرر 1.5%", {30, 1.5}),
         ("حد ضرر ۱٫۵ درصد", {1.5}),
+        ("حد ضرر ۱/۵ درصد", {1, 5, 1.5}),  # "/" is a common Persian decimal mark
         ("stop .5%", {0.5}),
         ("1,000 USDT and RSI 30,70", {1000, 30, 70}),
         ("EMA200 and EMA-50", {200, 50}),  # a hyphen after a letter is not a minus

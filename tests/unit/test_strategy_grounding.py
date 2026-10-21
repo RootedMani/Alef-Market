@@ -103,6 +103,11 @@ def test_the_check_reads_normalized_text() -> None:
     assert parse("وقتی RSI زیر ۳۰ بود، حد ضرر ۱٫۵ درصد", raw).status == "ok"
 
 
+def test_a_slash_decimal_grounds() -> None:
+    raw = answer({"entry": rsi_below(30), "exits": {"stop_loss_pct": 1.5}})
+    assert parse("RSI زیر ۳۰ بخر، حد ضرر ۱/۵ درصد", raw).status == "ok"
+
+
 def test_ok_with_unsupported_parts_is_refused() -> None:
     """A partial strategy drops part of the request: status must be "unsupported"."""
     raw = answer({"entry": rsi_below(30)}, unsupported=["and short when RSI > 70"])

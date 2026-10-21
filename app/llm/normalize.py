@@ -3,7 +3,8 @@
 ``normalize_text`` runs before the cache key, so a retyped demo prompt (Arabic ي/ك, Persian
 digits, a ZWNJ typed as a space, extra spaces, a final «.» or «؟») still hits its pinned row.
 ``detect_lang`` is code's decision, never the LLM's. ``text_numbers`` is the pool a parsed
-strategy's numbers must come from ("never a guess"): digits plus a small list of number words.
+strategy's numbers must come from ("never a guess"): digits (and «1/5» read as 1.5) plus a small
+list of number words.
 """
 
 from __future__ import annotations
@@ -51,6 +52,7 @@ _WORD_RE = re.compile(r"(?<!\w)(" + "|".join(NUMBER_WORDS) + r")(?!\w)", re.IGNO
 # 1,000 | .5 | 1.5 | 30, with a minus only where it can't be a hyphen ("EMA-50").
 _NUMBER_RE = re.compile(r"(?<![\w.])(-)?(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d*\.\d+|\d+)")
 _GLUED_RE = re.compile(r"(?<=[^\W\d_])(\d+(?:\.\d+)?)")  # "EMA200"
+_SLASH_DECIMAL_RE = re.compile(r"(?<![\d/])(\d+)/(\d+)(?![\d/])")  # «۱/۵» = 1.5
 
 
 def normalize_text(text: str) -> str:
@@ -75,5 +77,6 @@ def text_numbers(text: str) -> set[float]:
         value = float(body.replace(",", ""))
         found.add(-value if sign else value)
     found.update(float(m) for m in _GLUED_RE.findall(text))  # missed by the boundary above
+    found.update(float(f"{a}.{b}") for a, b in _SLASH_DECIMAL_RE.findall(text))
     found.update(NUMBER_WORDS[m.lower()] for m in _WORD_RE.findall(text))
     return found
