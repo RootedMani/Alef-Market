@@ -257,7 +257,10 @@ def bad_hour(trades: list[TradeView], *, tz: str = "Asia/Tehran") -> list[Insigh
             closed,
             hours[hour],
             params={"hour": hour, "hour_end": hour + 1},
-            extra_evidence=[Evidence(label_fa="ساعت شروع", value=hour, unit="hour")],
+            extra_evidence=[
+                Evidence(label_fa="ساعت شروع", value=hour, unit="hour"),
+                Evidence(label_fa="ساعت پایان", value=hour + 1, unit="hour"),
+            ],
         )
         out.extend(_list(fact))
     return out

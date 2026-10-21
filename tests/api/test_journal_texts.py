@@ -202,3 +202,12 @@ def test_mock_prose_names_the_current_prompt_ids(mock_client: TestClient) -> Non
     assert {i.text.meta.prompt for i in summary.insights} == {TASKS["insight"].prompt_id}
     assert summary.latest_review is not None
     assert summary.latest_review.narrative.meta.prompt == TASKS["trade_review"].prompt_id
+
+
+def test_the_bad_hour_card_shows_both_hours_in_its_evidence(client: TestClient) -> None:
+    """The card title stays «ساعت پرضرر»; the hours (e.g. 15–16) are evidence rows."""
+    card = next(i for i in journal(client).insights if i.key == "bad_hour")
+    hours = {e.label_fa: e.value for e in card.evidence if e.unit == "hour"}
+    assert set(hours) == {"ساعت شروع", "ساعت پایان"}
+    assert hours["ساعت پایان"] == hours["ساعت شروع"] + 1
+    assert card.title_fa == TITLES_FA["bad_hour"]
