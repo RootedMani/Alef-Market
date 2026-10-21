@@ -294,3 +294,12 @@ def test_the_mock_edit_says_what_changed(mock_client: TestClient) -> None:
     out = ParseResult.model_validate(mock_client.post("/api/backtest/edit", json=body).json())
     assert out.status == "ok" and out.changes_fa == ["حد ضرر از 1% به 2% تغییر کرد"]
     assert out.strategy is not None and out.readback_fa == strategy_to_persian(out.strategy)
+
+
+def test_the_mock_parse_readback_is_the_code_readback(mock_client: TestClient) -> None:
+    """The mock used to hardcode «RSI(14) < 30», which breaks B12 in right-to-left text."""
+    res = mock_client.post("/api/backtest/parse", json={"text": DEMO_PROMPTS[0]})
+    out = ParseResult.model_validate(res.json())
+    assert out.strategy is not None and out.readback_fa == strategy_to_persian(out.strategy)
+    assert "<" not in out.readback_fa and ">" not in out.readback_fa
+    assert out.meta is not None and out.meta.prompt == PARSE.prompt_id

@@ -249,9 +249,9 @@ def parse_result() -> ParseResult:
     return ParseResult(
         status="ok",
         strategy=_strategy(),
-        readback_fa="ورود: وقتی RSI(14) < 30 و close > EMA(200) · حد ضرر 1% · حد سود 2%",
+        readback_fa=strategy_to_persian(_strategy()),
         detected_lang="fa",
-        meta=TextMeta(source="cache", prompt="strategy_parse.v1", provider="groq#1"),
+        meta=TextMeta(source="cache", prompt="strategy_parse.v3", provider="groq#1"),
     )
 
 
