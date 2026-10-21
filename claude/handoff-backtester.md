@@ -18,7 +18,7 @@ The backtester is built, tested and served at `POST /api/backtest/run`. It's det
 
 `exits.check_exit` and `sizing.size_position` (Chat 5) were reused unchanged. No Chat 4 or backtester branch existed, so there was nothing to reconcile.
 
-`make check`: **392 passed**, 10 skipped, 8 deselected (live).
+`make check`: **392 passed**, 10 skipped, 8 deselected (live) at the end of this chat. After the LLM layer (steps 1–3): **569 passed**, 10 skipped, 8 deselected; see `handoff-llm-layer.md`.
 
 ### How the look-ahead tests work, and why there are three
 Look-ahead bias means using a bar's data before that bar has closed. It makes a backtest look better than any real trader could have done.
@@ -107,7 +107,7 @@ To reproduce: `make synthetic-market`, then `ALEF_REPLAY_EXCHANGE=synthetic make
 - **Live mode** on the DB cache is logged but not flagged in the result: there's no `stale` field yet (open item in §10).
 
 ## State of the repo and the machine
-- **Every step was squash-merged locally into `main`. Nothing has been pushed.** The four `fix/*` branches from earlier chats are untouched; none of them touch `app/backtest/`.
+- **Every step was squash-merged into `main` and is pushed to `origin/main`** (together with the LLM layer, up to `267bf48`). The four `fix/*` branches from earlier chats are untouched; none of them touch `app/backtest/`.
 - `var/alef.db` was rebuilt with **Sara on synthetic prices** (`ALEF_REPLAY_EXCHANGE=synthetic make reset-demo`). Synthetic seed files are in `data/market/synthetic_*` (gitignored). Rebuild with the real seeds once they're recorded.
 - **Installing dependencies on this machine.** `files.pythonhosted.org` times out, so `uv sync` fails. I installed the exact `uv.lock` versions, hash-verified, from the runflare mirror that `~/.config/pip/pip.conf` already uses:
   - `uv export --frozen --all-groups --no-emit-project --format requirements-txt -o req.txt`
