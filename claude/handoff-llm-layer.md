@@ -142,11 +142,14 @@ Branch `llm/step5-journal-texts`. `make check`: **821 passed**, 12 skipped, 35 d
 
 - **The cause/feeling word list is mine** (the Brief isn't in the repo): review `CAUSE_WORDS` / `FEELING_WORDS`. Changing them means new prompt versions (the prompts list them).
 - **A failed fill is retried on the next GET** (no negative cache); provider cooldowns bound it.
+- **Live mode, summary writes:** a live backtest upserts candles through the request's session, which then holds SQLite's write lock, so the summary's cache and `llm_calls` writes each wait 200 ms and give up (WARNINGs, about 0.4 s). Live metrics change every run, so the cache miss costs nothing; not fixed. Replay mode (the demo) is unaffected (tested).
 - Mocks now name the current prompt ids from `TASKS`.
 
 ## Pins
 
 **Pins are the LAST step.** Re-do them after any change to the engine, the market data, Sara's data, a prompt, or `TradeReviewFacts`: the cache key is the prompt id plus the exact facts, so any of these changes the facts (or the id) and silently orphans the pin. The analysis session will add the nearest level to `TradeReviewFacts`, which means a `trade_review.v4` and new review pins.
+
+**The stage trade changes the journal's keys.** Insight facts carry `sample_size`, `trade_ids` and `p_value`, and the review is about the newest trade, so closing the stage trade gives every card and the review new facts. Without pins for the post-trade states (for a winning AND a losing stage trade), the first journal view after the stage trade shows templates while the background fill runs.
 
 ## What is NOT done yet
 
