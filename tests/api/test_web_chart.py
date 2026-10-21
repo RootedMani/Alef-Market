@@ -309,3 +309,20 @@ def test_live_mode_shows_the_last_hours_without_replay_controls(
     assert start % MIN == 0 and now - start == pytest.approx(chart.LIVE_WINDOW_MS, abs=MIN)
     assert attr(page, "data-end-ts") == ""
     assert 'id="rp-play"' not in page
+
+
+def test_cards_show_the_strongest_levels_of_both_kinds() -> None:
+    from app.contracts.analysis import LevelZone
+
+    zones = [
+        LevelZone(kind=k, low=100.0 + r, high=101.0 + r, touches=2, rank=r)  # type: ignore[arg-type]
+        for k in ("resistance", "support")
+        for r in (1, 2, 3, 4)
+    ]
+    top = chart.top_levels(zones)
+    assert [(z.kind, z.rank) for z in top] == [
+        ("resistance", 1),
+        ("support", 1),
+        ("resistance", 2),
+        ("support", 2),
+    ]
