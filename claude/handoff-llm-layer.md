@@ -14,7 +14,7 @@ Steps 1–3 of the LLM layer are built, tested and on `origin/main` (`47dbeb3`..
 | `llm/providers.py` | `OpenAICompatProvider`: one httpx client per (provider, key) for Groq, Gemini and OpenRouter (A10). Maps HTTP status to `ProviderError.kind`: 429 → `rate_limited` (with `Retry-After`), 401/403 → `auth`, timeout → `timeout`, everything else → `http_error`. Error text is key-redacted and truncated. If a model rejects `response_format`, the call is retried once without it. `build_providers(settings)` | `test_llm_provider.py` (56) |
 | `llm/cache.py` | `cache_key` = sha256(prompt_id + canonical facts JSON: sorted keys, floats rounded to 9 decimals, −0.0 folded). `put_cached` is one atomic upsert that never touches a pinned row. `load_pinned` makes the DB's pinned set equal `data/llm/pinned.jsonl` | `test_llm_cache.py` (36), including a golden hash that locks the key across machines |
 | `llm/gateway.py` | `LLMGateway.run_json` / `run_text`: the ladder, deadlines, cache modes, `llm_calls` rows. Never raises | `test_llm_gateway.py` (67), driven by `tests/fakes.FakeProvider` and `FakeClock` |
-| `llm/tasks.py` | Task registry: prompt version, output model, `deadline_s`, `max_tokens`, retry hint, `check`. Parse/edit are v3, the rest v2 | `test_llm_infra.py` (12): a prompt-hash test fails if a prompt file changes without a new version |
+| `llm/tasks.py` | Task registry: prompt version, output model, `deadline_s`, `max_tokens`, retry hint, `check`. Parse is v3, edit v4, the rest v2 | `test_llm_infra.py` (12): a prompt-hash test fails if a prompt file changes without a new version |
 | `llm/validate.py` | JSON: strip fences → parse → Pydantic (`extra="forbid"`). Prose: Persian, Latin digits, no advice words, every number grounded in the facts | `test_llm_validate.py` (11) |
 | `settings.py` | `llm_cache_mode`, `llm_timeout_s` (8 s), `llm_proxy`, `llm_provider_order`, `llm_task_providers`, `*_keys`, `*_model`, `proxy_for(client)` | `test_proxies.py`, `test_llm_gateway.py` (env parsing) |
 
@@ -83,7 +83,7 @@ The deadline bounds the whole ladder for one call. An answer that arrives after 
 5. **Retry exactly once on the same key** with the rejected answer, the problem list and a per-task hint. For parse/edit the hint says: don't drop parts of the request to make it valid; use `unsupported`.
 6. **A 5xx, a timeout or a network error cools the whole provider for 60 s.** A 429 cools only that key. A 401/403 disables the key until restart. Any other 4xx skips the provider without a cooldown, because it is the same request and model on every key.
 7. **The gateway writes through its own engine with a 200 ms SQLite busy timeout** (the app's is 5 s). A request holding the write lock can't stall an answer. DB failures are WARNINGs.
-8. **Every prompt was bumped to v2** when `input_rules.md` changed every system prompt; parse/edit are v3 since step 4. The prompt-hash test enforces this.
+8. **Every prompt was bumped to v2** when `input_rules.md` changed every system prompt; since step 4 parse is v3 and edit v4. The prompt-hash test enforces this.
 
 ## How the requirements are proven
 
@@ -101,14 +101,14 @@ The deadline bounds the whole ladder for one call. An answer that arrives after 
 
 ## Step 4: strategy parsing (done, Oct 21)
 
-Branch `llm/step4-strategy-parse`. `make check`: **746 passed**, 12 skipped, 28 deselected (live).
+Branch `llm/step4-strategy-parse`, fast-forwarded into local `main` (not pushed). `make check`: **752 passed**, 12 skipped, 28 deselected (live).
 
 | Piece | Where | Tests |
 |---|---|---|
-| Prompts `strategy_parse.v3`, `strategy_edit.v3`: never write a number the user didn't (omit defaults), number words, bare "moving average" → unclear, «بفروش» after a buy rule → `exit_rule`, ok ⇒ nothing unsupported; the edit prompt now carries the schema (v2 said "same as parse", which the model never sees) | `llm/prompts/` | `test_llm_infra.py` |
-| Normalization before the cache key (ي/ى/ك, digits, ٫/٬, ZWNJ → space, marks, tatweel, whitespace, trailing punctuation); `detect_lang` (Persian letters ≥ half, RSI/EMA/BTC not counted); `text_numbers` (digits + یک–ده, tens, صد, دویست, پانصد, نیم; one–ten, tens, hundred, half) | `llm/normalize.py` | `test_llm_normalize.py` |
+| Prompts `strategy_parse.v3`, `strategy_edit.v4`: never write a number the user didn't (omit defaults), number words, bare "moving average" → unclear, «بفروش» after a buy rule → `exit_rule`, ok ⇒ nothing unsupported; the edit prompt now carries the schema (v2 said "same as parse", which the model never sees) and never removes what the instruction doesn't mention (v3 could be read as "drop the target") | `llm/prompts/` | `test_llm_infra.py` |
+| Normalization before the cache key (ي/ى/ك, digits, ٫/٬, ZWNJ → space, marks, tatweel, whitespace, trailing punctuation); `detect_lang` (Persian letters ≥ half, RSI/EMA/BTC not counted); `text_numbers` (digits, «1/5» also as 1.5, یک–ده, tens, صد, دویست, پانصد, نیم; one–ten, tens, hundred, half) | `llm/normalize.py` | `test_llm_normalize.py` |
 | **Never a guess**, run inside `validate_output` via `PromptTask.check` on the raw JSON (so: one retry naming the problem; cache and pinned rows pass it too). Every number exact and signed in the text (`version` exempt; a default the model writes is refused); RSI/EMA/SMA/ATR named in any spelling of `INDICATOR_ALIASES`; ok with `unsupported` refused. Edit: numbers added (new − old, counted) and indicators added must be in the instruction | `llm/strategy_checks.py` | `test_strategy_grounding.py` |
-| `/parse`, `/edit`: bare MA → «ساده (SMA) یا نمایی (EMA)؟» before any LLM call; every message from `llm/templates.py`; template after refused answers → `unclear`, with no answer at all → `offline` + the demo prompts; ok → `readback_fa` from code; edit → `changes_fa` from code, empty diff refused | `services/strategy.py`, `backtest/readback.py` | `tests/api/test_strategy_api.py` |
+| `/parse`, `/edit`: bare MA → «ساده (SMA) یا نمایی (EMA)؟» before any LLM call; every message from `llm/templates.py`; template after refused answers → `unclear`, with no answer at all → `offline` + the demo prompts; ok → `readback_fa` from code; edit → `changes_fa` from code (AND/OR order ignored), empty diff refused | `services/strategy.py`, `backtest/readback.py` | `tests/api/test_strategy_api.py` |
 | Eval set: 10 fa + 10 en (14 ok, 4 unsupported, 4 unclear, an injection); expected answers pass the live checks offline; live run `pytest -m live tests/evals` | `tests/evals/` | `test_strategy_evalset.py`, `tests/evals/test_strategy_evals.py` |
 
 - **`contract:`** `ParseResult.changes_fa: list[str]` (§3.4 updated). Mock `/edit` returns an example.
@@ -116,6 +116,11 @@ Branch `llm/step4-strategy-parse`. `make check`: **746 passed**, 12 skipped, 28 
 - **Indicator-name check, measured before wiring:** on the 14 ok eval cases, Latin names only refused 6 (fa-04..07, en-03, en-04); the alias table refuses 0.
 - **Demo prompts are drafts** (`llm/demo_prompts.py`, eval cases fa-01..03) until each gets ≥ ~10 trades on the real replay days. Prompt 1 keeps its stop for the edit demo. Step 6's pin script must pin them under `normalize_text(prompt)`.
 - **Not run here:** the live eval (no keys on this machine). Run `uv run pytest -m live tests/evals -v`.
+- **Prompt-dependent, unverified until the live run:** «بفروش» → exit rule (fa-02, en-02) and short/leverage → `unsupported` (fa-08, en-08). Offline tests only prove that code passes an exit rule through and refuses a short.
+- **The eval set has no edit cases yet**, so edit behaviour (e.g. keeping an unmentioned target) is only tested with scripted answers.
+- **The offline message says the demo prompts work without the LLM.** That is true only once step 6 pins them; `pinned.jsonl` is still empty.
+- **The MA question doesn't list what is supported** (it is a question, by request); every other unclear/unsupported message does.
+- **Known false questions/refusals, not handled:** «میانگین متحرک ۲۰۰ روزه نمایی» (number between the name and «نمایی») is asked "SMA or EMA?"; so is an edit «شرط میانگین متحرک رو حذف کن» on a strategy with one EMA; «یک و نیم درصد» is refused (number words aren't added up).
 
 ## What is NOT done yet
 
@@ -150,6 +155,6 @@ make reset-demo                              # rebuilds the DB and reloads data/
 - `ALEF_LLM_TASK_PROVIDERS='{"strategy_parse":["gemini"]}'`: a per-task provider order.
 
 ## State of the repo
-- `main` = `origin/main` at `d3525b6` (steps 1–3 and the gap follow-ups, pushed). Step 4 is on `llm/step4-strategy-parse`, committed step by step; merge and push when approved.
+- `origin/main` is at `d3525b6` (steps 1–3 and the gap follow-ups). Step 4 is on `llm/step4-strategy-parse`, fast-forwarded into local `main`, **not pushed**.
 - `fix/llm-gateway-hardening` (`a6414ee`, same tree as `0ea952c` on main) was deleted. The four older `fix/*` branches are untouched.
 - **Dependencies:** `uv sync` still fails on this machine, because `files.pythonhosted.org` times out. Use the hash-verified mirror install in `handoff-backtester.md` § State.
