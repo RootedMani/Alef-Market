@@ -1,4 +1,4 @@
-# Handoff: LLM layer, steps 1–5 (Oct 20–21, 2026)
+# Handoff: LLM layer, steps 1–6 (Oct 20–21, 2026)
 
 Steps 1–3 of the LLM layer are built, tested and on `origin/main` (`47dbeb3`..`267bf48`): the providers, the cache with the pinned seed file, and the gateway. §8 of `docs/architecture-v1.md` describes the rules and matches the code.
 
@@ -151,14 +151,67 @@ Branch `llm/step5-journal-texts`. `make check`: **821 passed**, 12 skipped, 35 d
 
 **The stage trade changes the journal's keys.** Insight facts carry `sample_size`, `trade_ids` and `p_value`, and the review is about the newest trade, so closing the stage trade gives every card and the review new facts. Without pins for the post-trade states (for a winning AND a losing stage trade), the first journal view after the stage trade shows templates while the background fill runs.
 
+## Step 6: scripts and the offline boot test (done, Oct 21)
+
+Branch `llm/step6-scripts`. `make check`: **853 passed**, 12 skipped, 35 deselected (live).
+
+| Piece | Where | Tests |
+|---|---|---|
+| Step-5 follow-ups: long feeling roots (عصبان، نگران، ناامید، استرس، هیجان، انتقام، اضطراب) match as word prefixes, short roots (ترس، طمع، حرص) only by listed forms; nothing legitimate blocked (every template, strategy message, prompt example, glossary term, quoted title). The bad-hour card's evidence now has «ساعت شروع» AND «ساعت پایان» (Sara: 15 and 16); its title stays «ساعت پرضرر» | `llm/prose_checks.py`, `journal/detectors.py` | `test_prose_checks.py`, `test_journal_texts.py` |
+| `services/backtest.compute_backtest`: the result + summary, saving nothing (scripts use it); `run_backtest` = compute + the `backtest_runs` row | `services/backtest.py` | the cached-rerun test, unchanged |
+| `scripts/llm_probe.py` (see "How to run" below) | `scripts/` | `test_llm_probe.py`: the gateway's exact request, 429 → next key (both recorded), deadline column, table arithmetic, no key in the file or stdout, real inputs |
+| `scripts/pin_demo_prompts.py` (dry run by default; **not run for real**) | `scripts/` | `test_pin_demo_prompts.py`: dry run writes nothing, only an exact `yes` pins, normalized text, re-pinning replaces, templates never pinnable, the committed seed file untouched |
+| Offline boot: sockets disabled before the app is built, `ALEF_LLM_CACHE_MODE=only` from the env, keys set: journal, backtest, pinned demo parse, offline for the rest, no connect attempt, no ERROR log (fails if the mode is "fallback") | `tests/api/test_offline_boot.py` | itself |
+
+On 5 days of synthetic candles demo prompt 1 made **0 trades** (prompt 2: 18, prompt 3: 57). Real replay data will differ, which is what the pin script's trade count is for.
+
+## How to run (your machine)
+
+**1. `.env`** (gitignored; copy `.env.example`):
+```bash
+ALEF_GROQ_KEYS=gsk_aaa,gsk_bbb          # comma-separated; aliases groq#1, groq#2 in this order
+ALEF_GEMINI_KEYS=AIza...
+ALEF_OPENROUTER_KEYS=sk-or-...
+ALEF_LLM_PROXY=http://127.0.0.1:10808   # only if the LLM APIs need a proxy; must have a scheme
+# socks5://127.0.0.1:10808 also works after: uv add 'httpx[socks]'
+# Your shell's HTTP_PROXY / HTTPS_PROXY / ALL_PROXY are IGNORED by the app: use ALEF_*_PROXY.
+```
+Optional: `ALEF_GROQ_MODEL=…`, `ALEF_GEMINI_MODEL=…`, `ALEF_OPENROUTER_MODEL=…`, and after the probe `ALEF_LLM_TASK_PROVIDERS='{"strategy_parse":["gemini","groq"],"backtest_summary":["groq"]}'`.
+
+**2. The probe** (about 8 calls per provider/model; a minute or two):
+```bash
+uv run python -m scripts.llm_probe
+uv run python -m scripts.llm_probe --model groq=qwen/qwen3-32b --pause 2   # an extra model, slower pace
+```
+It prints one line per call, then a table like this (numbers illustrative), and writes `var/llm_probe/probe-<UTC>.jsonl` (outputs, verdicts, problems, latency, HTTP status, key alias; never a key):
+```
+provider                      task              n  valid  pass  errors  median_ms  in_deadline
+----------------------------  ----------------  -  -----  ----  ------  ---------  -----------
+groq:llama-3.3-70b-versatile  strategy_parse    3  2      67%   0       1100       100%
+groq:llama-3.3-70b-versatile  backtest_summary  2  2      100%  0       1950       50%
+gemini:gemini-2.5-flash       strategy_parse    3  2      100%  1       2350       100%
+```
+`pass` = valid / answered (429s, timeouts and HTTP errors are `errors`, not invalid); `in_deadline` = answered within the task's deadline (summary 2 s, journal 3 s, parse 15 s). Pick per task the provider with the best pass rate that is in deadline. The header says whether summaries came from backtests of demo prompts 1 and 3 or from two `sample` metric sets (no stored candles).
+
+**3. The live evals** (20 parse + 3 edit cases, plus the prose smoke run):
+```bash
+uv run pytest -m live tests/evals -v
+```
+Each case prints PASSED/FAILED; a failure shows the status, message or strategy that differed. All of them skip with "no LLM keys in .env" if no key is set.
+
+**4. The pins: LAST**, after the probe, the eval fixes and any change to engine/data/prompts:
+```bash
+make reset-demo                                      # the demo DB with the real seed candles
+uv run python -m scripts.pin_demo_prompts            # dry run: look at every answer
+uv run python -m scripts.pin_demo_prompts --write    # asks "Pin demo prompt N? Type yes to pin:"
+```
+For each prompt it prints the parse status and provider, the strategy JSON, the readback («فهمیدم: ورود وقتی …»), `stop_loss_pct`, the backtest request and `n_trades` (a WARNING under 10), and the summary. Only an exact `yes` pins that prompt's parse and summary lines; it ends with `wrote N lines to …/data/llm/pinned.jsonl: the app loads N pinned answers, skips 0`. Then commit `data/llm/pinned.jsonl`. **A summary pin only hits for the exact request the demo sends**: pass the same `--symbol`, `--timeframe`, `--start-ts`, `--end-ts` (ms) the frontend will send.
+
+**5. The offline rehearsal:** `ALEF_LLM_CACHE_MODE=only make dev`: no LLM network at all; pinned prompts work, other texts get the offline message.
+
 ## What is NOT done yet
 
-**Step 6: scripts and checks run on your machine.**
-- **`scripts/llm_probe`**: check each configured key and provider.
-- **`scripts/pin_demo_prompts`**: write the hand-reviewed demo answers to `data/llm/pinned.jsonl`.
-- **The live eval run** (`pytest -m live`).
-- **The offline boot test**: the app boots and serves pinned answers with no network.
-- **The Persian quality test**: then set `*_model` and `ALEF_LLM_TASK_PROVIDERS` from it.
+**Step 6, the parts only you can run** (the code is done, see below): the probe and the live evals on your keys (this is the Persian quality test), then `ALEF_LLM_TASK_PROVIDERS` / `*_model` from the table, then the pins, last.
 
 **Step 7: decisions and the final handoff.** Copy the decisions above into §10 of `docs/architecture-v1.md`, then write the final LLM handoff.
 
@@ -169,6 +222,8 @@ Branch `llm/step5-journal-texts`. `make check`: **821 passed**, 12 skipped, 35 d
 ```bash
 make check                                   # lint + tests, exactly what CI runs
 uv run pytest -m live tests/evals -v         # strategy prompts/edits + prose smoke on the real providers
+uv run python -m scripts.llm_probe           # pass rate / latency per provider and task
+uv run python -m scripts.pin_demo_prompts    # dry run; --write pins (LAST step)
 ALEF_LLM_CACHE_MODE=only make dev            # full offline rehearsal: no LLM network at all
 ALEF_LLM_CACHE_MODE=prefer make dev          # demo day: cache first
 make reset-demo                              # rebuilds the DB and reloads data/llm/pinned.jsonl
@@ -180,6 +235,6 @@ make reset-demo                              # rebuilds the DB and reloads data/
 - `ALEF_LLM_TASK_PROVIDERS='{"strategy_parse":["gemini"]}'`: a per-task provider order.
 
 ## State of the repo
-- `origin/main` has steps 1–5. Each step's branch (`llm/step4-strategy-parse`, `llm/step5-journal-texts`) was fast-forwarded into `main`, no squash.
+- `origin/main` has steps 1–6. Each step's branch (`llm/step4-strategy-parse`, `llm/step5-journal-texts`, `llm/step6-scripts`) was fast-forwarded into `main`, no squash.
 - `fix/llm-gateway-hardening` (`a6414ee`, same tree as `0ea952c` on main) was deleted. The four older `fix/*` branches are untouched.
 - **Dependencies:** `uv sync` still fails on this machine, because `files.pythonhosted.org` times out. Use the hash-verified mirror install in `handoff-backtester.md` § State.
