@@ -31,6 +31,8 @@ BUILT_CHAT5 = {
 }
 # Chat 6: the backtester (tests/api/test_backtest_api.py)
 BUILT_CHAT6 = {"/api/backtest/run"}
+# LLM step 4 (tests/api/test_strategy_api.py)
+BUILT_LLM = {"/api/backtest/parse"}
 
 CASES: list[tuple[str, str, dict | None, dict | None, object]] = [
     ("GET", "/api/auth/me", None, None, UserPublic),
@@ -95,6 +97,8 @@ def test_unbuilt_endpoints_return_persian_501(
         pytest.skip("built in Chat 5; real behaviour is tested in tests/api/test_trades_api.py")
     if url in BUILT_CHAT6:
         pytest.skip("built in Chat 6; real behaviour is tested in tests/api/test_backtest_api.py")
+    if url in BUILT_LLM:
+        pytest.skip("built in LLM step 4; real behaviour is tested in test_strategy_api.py")
     with client.app.state.session_factory() as db:  # a logged-in user, so 501 isn't masked by 401
         ensure_demo_user(db)
         db.commit()

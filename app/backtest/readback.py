@@ -88,6 +88,6 @@ def _sizing(strategy: Strategy) -> str:
 
 
 def strategy_to_persian(strategy: Strategy) -> str:
-    """e.g. «فهمیدم: خرید وقتی RSI(14) کمتر از 30 باشد و … خروج: حد ضرر 1%. …»."""
+    """e.g. «فهمیدم: ورود وقتی RSI(14) کمتر از 30 باشد و … خروج: حد ضرر 1%. …»."""
     entry = rule_to_persian(strategy.entry)
-    return f"فهمیدم: خرید وقتی {entry}. {_exits(strategy)}. {_sizing(strategy)}."
+    return f"فهمیدم: ورود وقتی {entry}. {_exits(strategy)}. {_sizing(strategy)}."

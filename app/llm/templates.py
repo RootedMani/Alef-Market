@@ -119,3 +119,43 @@ def trade_review_template(facts: TradeReviewFacts) -> str:
         names = " و ".join(f"«{TITLES_FA[k]}»" for k in facts.matched)
         text += f" این معامله در الگوی {names} قرار می‌گیرد که در کارت‌های بینش آمده است."
     return text
+
+
+# ---------- strategy parse/edit (LLM step 4) ----------
+# Every refusal is written here, by code: the LLM only returns a status and the parts it
+# couldn't express. No "<"/">" (B12) and no imperatives (بخر/بفروش).
+
+SUPPORTED_FA = (
+    "چیزهایی که می‌توانم آزمایش کنم: قیمت (باز شدن، بسته شدن، سقف، کف) و حجم معاملات؛ "
+    "RSI، EMA، SMA، ATR و میانگین حجم معاملات؛ مقایسهٔ «بیشتر از»، «کمتر از» و "
+    "«رو به بالا یا رو به پایین قطع کند»؛ ترکیب شرط‌ها با «و» یا «یا»؛ حد ضرر، حد سود، "
+    "خروج بعد از چند کندل و شرط خروج؛ اندازهٔ پوزیشن. فقط پوزیشن خرید (لانگ)، بدون اهرم."
+)
+
+
+def strategy_unsupported_fa(parts: list[str]) -> str:
+    if parts:
+        listed = "، ".join(f"«{p}»" for p in parts)
+        return f"این بخش‌ها را هنوز نمی‌توانم آزمایش کنم: {listed}. {SUPPORTED_FA}"
+    return f"این درخواست را هنوز نمی‌توانم آزمایش کنم. {SUPPORTED_FA}"
+
+
+def strategy_unclear_fa(example: str) -> str:
+    return (
+        "منظورتان را دقیق متوجه نشدم. استراتژی را با نام اندیکاتور و عددها بنویسید، "
+        f"مثلاً: «{example}». {SUPPORTED_FA}"
+    )
+
+
+STRATEGY_WHICH_MA_FA = (
+    "منظورتان کدام میانگین متحرک است: ساده (SMA) یا نمایی (EMA)؟ "
+    "لطفاً نوع و دوره‌اش را بنویسید، مثلاً «EMA 200» یا «SMA 50»."
+)
+
+
+def strategy_offline_fa(demo_prompts: tuple[str, ...]) -> str:
+    listed = " ".join(f"{i}) «{p}»" for i, p in enumerate(demo_prompts, start=1))
+    return (
+        "الان به سرویس تبدیل متن به استراتژی دسترسی ندارم. "
+        f"این نمونه‌ها بدون آن هم کار می‌کنند: {listed}"
+    )

@@ -7,7 +7,9 @@ right-to-left text those characters are mirrored, so «RSI(14) < 30» could be r
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 
 import pytest
 
@@ -23,7 +25,7 @@ def test_the_contract_docstring_example() -> None:
     """ "buy when RSI < 30 and close > EMA 200, stop 1%" (``contracts/strategy.py``)."""
     s = strategy(group("and", RSI_LT_30, CLOSE_GT_EMA200), stop=1)
     assert strategy_to_persian(s) == (
-        "فهمیدم: خرید وقتی RSI(14) کمتر از 30 باشد و قیمت بسته‌شدن بیشتر از EMA(200) باشد. "
+        "فهمیدم: ورود وقتی RSI(14) کمتر از 30 باشد و قیمت بسته‌شدن بیشتر از EMA(200) باشد. "
         "خروج: حد ضرر 1%. "
         "اندازهٔ پوزیشن: 100% سرمایه."
     )
@@ -39,7 +41,7 @@ def test_every_exit_and_risk_sizing() -> None:
         sizing=PositionSizing(mode="risk_pct", value_pct=1),
     )
     assert strategy_to_persian(s) == (
-        "فهمیدم: خرید وقتی قیمت بسته‌شدن، SMA(50) را رو به بالا قطع کند. "
+        "فهمیدم: ورود وقتی قیمت بسته‌شدن، SMA(50) را رو به بالا قطع کند. "
         "خروج (هر کدام زودتر رخ دهد): حد ضرر 1.5%، حد سود 3%، بعد از 12 کندل، "
         "یا وقتی RSI(14) بیشتر از 70 باشد. "
         "ریسک هر معامله: 1% سرمایه (اگر حد ضرر بخورد)."
@@ -49,7 +51,7 @@ def test_every_exit_and_risk_sizing() -> None:
 def test_no_exits_says_the_position_closes_at_the_end() -> None:
     s = strategy(cond(price("volume"), ">", ind("avg_volume")))
     assert strategy_to_persian(s) == (
-        "فهمیدم: خرید وقتی حجم معاملات بیشتر از میانگین حجم معاملات 20 کندل باشد. "
+        "فهمیدم: ورود وقتی حجم معاملات بیشتر از میانگین حجم معاملات 20 کندل باشد. "
         "خروج: قانون خروجی ندارد؛ پوزیشن در پایان بازه بسته می‌شود. "
         "اندازهٔ پوزیشن: 100% سرمایه."
     )
@@ -66,7 +68,7 @@ def test_nested_groups_get_parentheses_and_or_reads_as_ya() -> None:
         sizing=PositionSizing(value_pct=50),
     )
     assert strategy_to_persian(s) == (
-        "فهمیدم: خرید وقتی (RSI(14) کمتر از 30 باشد یا پایین‌ترین قیمت، EMA(20) را رو به پایین "
+        "فهمیدم: ورود وقتی (RSI(14) کمتر از 30 باشد یا پایین‌ترین قیمت، EMA(20) را رو به پایین "
         "قطع کند) و ATR(14) بیشتر از 150.25 باشد. "
         "خروج: حد سود 2%. "
         "اندازهٔ پوزیشن: 50% سرمایه."
@@ -126,3 +128,18 @@ def test_every_number_in_the_strategy_appears() -> None:
     text = strategy_to_persian(s)
     for n in ["9", "21", "80", "3", "2", "4.5", "100"]:
         assert re.search(rf"(?<![\d.]){re.escape(n)}(?![\d.])", text), n
+
+
+def _eval_strategies() -> list[Strategy]:
+    path = Path(__file__).parents[1] / "evals" / "strategy_prompts.jsonl"
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+    return [Strategy.model_validate(r["strategy"]) for r in rows if r["status"] == "ok"]
+
+
+@pytest.mark.parametrize("s", _eval_strategies())
+def test_the_readback_says_entry_and_exit_never_buy_or_sell_imperatives(s: Strategy) -> None:
+    """«بخر»/«بفروش» are orders to the user; the readback describes what will be tested."""
+    text = strategy_to_persian(s)
+    assert text.startswith("فهمیدم: ورود وقتی") and "خروج" in text
+    assert not re.search(r"(?<!\w)(بخر|بفروش)(?!\w)", text)
+    assert "<" not in text and ">" not in text

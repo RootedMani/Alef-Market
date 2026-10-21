@@ -13,7 +13,8 @@ from app.contracts.briefing import Briefing
 from app.contracts.common import Symbol, Timeframe, TimestampMs
 from app.contracts.journal import JournalSummary, OpenTradeRequest, TradeRecord
 from app.contracts.strategy import EditRequest, ParseRequest, ParseResult
-from app.services import backtest, journal, trades
+from app.llm.gateway import LLMGateway
+from app.services import backtest, journal, strategy, trades
 from app.settings import Settings
 
 
@@ -27,8 +28,8 @@ def get_briefing(db: Session, settings: Settings, *, as_of_ts: TimestampMs | Non
     raise NotImplementedError("Week 3")
 
 
-def parse_strategy(db: Session, settings: Settings, req: ParseRequest) -> ParseResult:
-    raise NotImplementedError("Week 2")
+def parse_strategy(gateway: LLMGateway, req: ParseRequest) -> ParseResult:
+    return strategy.parse_strategy(gateway, req)
 
 
 def edit_strategy(db: Session, settings: Settings, req: EditRequest) -> ParseResult:
