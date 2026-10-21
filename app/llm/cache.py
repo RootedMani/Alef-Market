@@ -130,7 +130,7 @@ class PinnedReport:
     unpinned: int
 
 
-def _check_entry(data: Any) -> tuple[str, str, str, str]:
+def check_pinned_entry(data: Any) -> tuple[str, str, str, str]:
     """``(key, prompt_id, input_json, output)`` for a valid line, else ValueError."""
     if not isinstance(data, dict):
         raise ValueError("not a JSON object")
@@ -163,7 +163,7 @@ def load_pinned(session: Session, path: Path) -> PinnedReport:
             continue
         try:
             data = json.loads(line)
-            key, prompt_id, input_json, output = _check_entry(data)
+            key, prompt_id, input_json, output = check_pinned_entry(data)
         except ValueError as exc:  # JSONDecodeError is a ValueError
             skipped += 1
             logger.warning("%s line %d skipped: %s", path.name, n, exc)
