@@ -101,7 +101,7 @@ The deadline bounds the whole ladder for one call. An answer that arrives after 
 
 ## Step 4: strategy parsing (done, Oct 21)
 
-Branch `llm/step4-strategy-parse`, fast-forwarded into local `main` (not pushed). `make check`: **752 passed**, 12 skipped, 28 deselected (live).
+On `origin/main` (step by step, no squash). `make check`: **769 passed**, 12 skipped, 31 deselected (live).
 
 | Piece | Where | Tests |
 |---|---|---|
@@ -109,7 +109,7 @@ Branch `llm/step4-strategy-parse`, fast-forwarded into local `main` (not pushed)
 | Normalization before the cache key (ي/ى/ك, digits, ٫/٬, ZWNJ → space, marks, tatweel, whitespace, trailing punctuation); `detect_lang` (Persian letters ≥ half, RSI/EMA/BTC not counted); `text_numbers` (digits, «1/5» also as 1.5, یک–ده, tens, صد, دویست, پانصد, نیم; one–ten, tens, hundred, half) | `llm/normalize.py` | `test_llm_normalize.py` |
 | **Never a guess**, run inside `validate_output` via `PromptTask.check` on the raw JSON (so: one retry naming the problem; cache and pinned rows pass it too). Every number exact and signed in the text (`version` exempt; a default the model writes is refused); RSI/EMA/SMA/ATR named in any spelling of `INDICATOR_ALIASES`; ok with `unsupported` refused. Edit: numbers added (new − old, counted) and indicators added must be in the instruction | `llm/strategy_checks.py` | `test_strategy_grounding.py` |
 | `/parse`, `/edit`: bare MA → «ساده (SMA) یا نمایی (EMA)؟» before any LLM call; every message from `llm/templates.py`; template after refused answers → `unclear`, with no answer at all → `offline` + the demo prompts; ok → `readback_fa` from code; edit → `changes_fa` from code (AND/OR order ignored), empty diff refused | `services/strategy.py`, `backtest/readback.py` | `tests/api/test_strategy_api.py` |
-| Eval set: 10 fa + 10 en (14 ok, 4 unsupported, 4 unclear, an injection); expected answers pass the live checks offline; live run `pytest -m live tests/evals` | `tests/evals/` | `test_strategy_evalset.py`, `tests/evals/test_strategy_evals.py` |
+| Eval set: 10 fa + 10 en parse cases (14 ok, 4 unsupported, 4 unclear, an injection) and 3 edits (the demo edit, a number change, a removal that must keep the stop); expected answers pass the live checks offline; live run `pytest -m live tests/evals` | `tests/evals/` | `test_strategy_evalset.py`, `tests/evals/test_strategy_evals.py` |
 
 - **`contract:`** `ParseResult.changes_fa: list[str]` (§3.4 updated). Mock `/edit` returns an example.
 - **The readback now starts «فهمیدم: ورود وقتی»** (was «خرید وقتی»): entry/exit wording, never بخر/بفروش. Frontend: the mock `/parse` readback is now the real code readback (it hardcoded `<`/`>`).
@@ -117,10 +117,13 @@ Branch `llm/step4-strategy-parse`, fast-forwarded into local `main` (not pushed)
 - **Demo prompts are drafts** (`llm/demo_prompts.py`, eval cases fa-01..03) until each gets ≥ ~10 trades on the real replay days. Prompt 1 keeps its stop for the edit demo. Step 6's pin script must pin them under `normalize_text(prompt)`.
 - **Not run here:** the live eval (no keys on this machine). Run `uv run pytest -m live tests/evals -v`.
 - **Prompt-dependent, unverified until the live run:** «بفروش» → exit rule (fa-02, en-02) and short/leverage → `unsupported` (fa-08, en-08). Offline tests only prove that code passes an exit rule through and refuses a short.
-- **The eval set has no edit cases yet**, so edit behaviour (e.g. keeping an unmentioned target) is only tested with scripted answers.
-- **The offline message says the demo prompts work without the LLM.** That is true only once step 6 pins them; `pinned.jsonl` is still empty.
+- **The offline message suggests only demo prompts with a pinned answer** (`gateway.is_pinned`); with none pinned it says to try again later. `pinned.jsonl` is still empty, so today it never suggests them: step 6 pins them.
 - **The MA question doesn't list what is supported** (it is a question, by request); every other unclear/unsupported message does.
-- **Known false questions/refusals, not handled:** «میانگین متحرک ۲۰۰ روزه نمایی» (number between the name and «نمایی») is asked "SMA or EMA?"; so is an edit «شرط میانگین متحرک رو حذف کن» on a strategy with one EMA; «یک و نیم درصد» is refused (number words aren't added up).
+- **A period between the name and the type is fine:** «میانگین متحرک ۲۰۰ روزه نمایی», «… ۲۰ روزهٔ ساده», «مووینگ ۵۰ کندلی ساده» name EMA/SMA (no question).
+
+### Known limits (not fixed, by decision)
+- **«یک و نیم درصد» is refused.** Number words are not added up, so 1.5 is not in the text's numbers; the user is told it was unclear. Digits («1.5», «۱٫۵», «۱/۵») work.
+- **Removing a moving-average condition by name asks "SMA or EMA?".** An edit like «شرط میانگین متحرک رو حذف کن» on a strategy with one EMA is a bare moving average to the pre-check, so it gets the question before any LLM call, although the strategy makes it unambiguous. Writing «شرط EMA رو حذف کن» works.
 
 ## What is NOT done yet
 
