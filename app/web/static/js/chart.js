@@ -131,6 +131,21 @@
     }
   }
 
+  // ---- the backtest result chart: equity vs just holding, trade marks, Tehran time ----
+
+  function backtestSeries(d, colors) {
+    const line = ([ts, v]) => ({ time: toChartTime(ts, d.offset), value: v });
+    const marks = [];
+    for (const [entry, exit, win] of d.trades) {
+      marks.push({ time: toChartTime(entry, d.offset), position: "belowBar", shape: "arrowUp",
+        color: colors.entry });
+      marks.push({ time: toChartTime(exit, d.offset), position: "aboveBar", shape: "circle",
+        color: win ? colors.win : colors.loss });
+    }
+    marks.sort((a, b) => a.time - b.time);
+    return { equity: d.equity.map(line), hold: d.hold.map(line), markers: marks };
+  }
+
   // "empty" -> a calm card instead of the chart; "stale" -> the chart plus a notice.
   function seriesProblem(series) {
     if (!series.candles.length) return "empty";
@@ -164,11 +179,11 @@
     }
   }
 
-  function chartSink(LC, el, offset) {
-    const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-    const up = css("--up");
-    const down = css("--down");
-    const chart = LC.createChart(el, {
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+  // Chart times are already Tehran wall time (shifted), so every formatter reads them as UTC.
+  function chartOptions() {
+    return {
       autoSize: true,
       layout: { background: { color: "transparent" }, textColor: css("--muted") },
       grid: { vertLines: { color: css("--border") }, horzLines: { color: css("--border") } },
@@ -181,7 +196,13 @@
         secondsVisible: false,
         tickMarkFormatter: (t, type) => (type < 3 ? fmtChartDate(t).slice(5) : fmtChartTime(t)),
       },
-    });
+    };
+  }
+
+  function chartSink(LC, el, offset) {
+    const up = css("--up");
+    const down = css("--down");
+    const chart = LC.createChart(el, chartOptions());
     const candles = chart.addSeries(LC.CandlestickSeries, {
       upColor: up, downColor: down, wickUpColor: up, wickDownColor: down, borderVisible: false,
     });
@@ -358,11 +379,35 @@
     }
   }
 
-  if (typeof document !== "undefined") document.addEventListener("DOMContentLoaded", init);
+  function drawBacktest() {
+    const el = document.getElementById("bt-chart");
+    const src = document.getElementById("bt-data");
+    if (!el || !src || el.dataset.drawn || !window.LightweightCharts) return;
+    el.dataset.drawn = "1";
+    const LC = window.LightweightCharts;
+    const s = backtestSeries(JSON.parse(src.textContent), {
+      entry: css("--accent"), win: css("--up"), loss: css("--down"),
+    });
+    const chart = LC.createChart(el, chartOptions());
+    // the whole range must fit even on a phone: ~1,200 points in ~340 px
+    chart.timeScale().applyOptions({ minBarSpacing: 0.01 });
+    const opts = { lineWidth: 2, lastValueVisible: false, priceLineVisible: false };
+    const hold = chart.addSeries(LC.LineSeries, { ...opts, color: css("--muted"), lineStyle: 2 });
+    const equity = chart.addSeries(LC.LineSeries, { ...opts, color: css("--accent") });
+    hold.setData(s.hold);
+    equity.setData(s.equity);
+    LC.createSeriesMarkers(equity, s.markers);
+    requestAnimationFrame(() => chart.timeScale().fitContent()); // after autoSize has measured
+  }
+
+  if (typeof document !== "undefined") {
+    document.addEventListener("DOMContentLoaded", init);
+    document.addEventListener("htmx:afterSettle", drawBacktest); // a run result arrived
+  }
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
       STEP_MS, toChartTime, fromChartTime, fmtChartTime, fmtChartDate, fmtClock,
-      closedCount, emaMap, frameAt, Replay, seriesProblem,
+      closedCount, emaMap, frameAt, Replay, seriesProblem, backtestSeries,
     };
   }
 })();

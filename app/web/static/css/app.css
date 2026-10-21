@@ -324,12 +324,105 @@ h2 { font-size: 1.05rem; }
 .placeholder-title { margin: 0; font-weight: 600; }
 .placeholder .muted { margin: 0.25rem 0 0; }
 
+/* ---- backtest page ---- */
+
+.field-label { display: block; font-weight: 600; margin-bottom: 0.35rem; }
+
+textarea, .edit-form input[name="text"] {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.5rem 0.75rem;
+  resize: vertical;
+}
+
+.edit-form input[name="text"] { flex: 1; min-width: 12rem; width: auto; }
+/* dir="auto" makes an empty box LTR, which would scramble the Persian placeholder */
+textarea:placeholder-shown, .edit-form input:placeholder-shown { direction: rtl; }
+
+/* loading messages take no room until a request is running */
+.htmx-indicator { display: none; }
+.htmx-request.htmx-indicator, .htmx-request .htmx-indicator { display: inline; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0.6rem 0; }
+
+.chip {
+  max-width: 100%;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  text-align: start;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  cursor: pointer;
+}
+
+.chip:hover, .chip:focus-visible { border-color: var(--accent); color: var(--accent); }
+
+.form-row { display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: center; margin: 0.5rem 0; }
+
+.loading { color: var(--accent); font-size: 0.85rem; }
+.loading::before {
+  content: "";
+  display: inline-block;
+  width: 0.8rem;
+  height: 0.8rem;
+  margin-inline-end: 0.4rem;
+  vertical-align: -0.1rem;
+  border: 2px solid var(--accent);
+  border-inline-start-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+button[disabled] { opacity: 0.55; cursor: progress; }
+
+.readback { font-size: 1rem; margin: 0.25rem 0 0.5rem; }
+.changes { margin-bottom: 0.5rem; color: var(--up); }
+.changes ul { margin: 0.25rem 0 0; padding-inline-start: 1.2rem; }
+.edit-form { margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+.message { margin: 0; }
+
+.run-result { margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+
+.sample-note {
+  padding: 0.6rem 0.8rem;
+  border-radius: 10px;
+  border-inline-start: 4px solid var(--warn);
+  background: var(--surface-2);
+  color: var(--warn);
+  font-weight: 700;
+}
+
+.bt-chart { height: 260px; }
+.swatch-hold { background: var(--muted); margin-inline-start: 0.6rem; }
+.legend { flex-wrap: wrap; }
+.legend-note { flex-basis: 100%; font-size: 0.75rem; }
+
+.metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin: 1rem 0; }
+.metric { padding: 0.6rem 0.75rem; border: 1px solid var(--border); border-radius: 10px; }
+.metric dt { font-size: 0.8rem; color: var(--muted); }
+.metric dd { margin: 0; }
+.metric .value { font-size: 1.15rem; font-weight: 700; }
+.metric .plain { font-size: 0.78rem; line-height: 1.6; }
+
+h3 { font-size: 0.95rem; margin: 1rem 0 0.25rem; }
+.trades .row { justify-content: space-between; font-size: 0.85rem; }
+.trades .win .pnl { color: var(--up); }
+.trades .loss .pnl { color: var(--down); }
+
 /* ---- laptop: nav under the header, disclaimer alone at the bottom ---- */
 
 @media (min-width: 768px) {
   body { padding-bottom: calc(var(--disclaimer-h) + 1rem); }
 
   .chart { height: 420px; }
+  .bt-chart { height: 340px; }
+  .metrics { grid-template-columns: repeat(3, 1fr); }
   .panels { grid-template-columns: 1fr 1fr; }
 
   .tabs {

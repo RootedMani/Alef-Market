@@ -17,6 +17,7 @@ from app.llm.cache import load_pinned_safely
 from app.llm.gateway import DB_BUSY_TIMEOUT_MS, build_gateway
 from app.logging_setup import setup_logging
 from app.settings import Settings, get_settings
+from app.web.backtest import router as backtest_router
 from app.web.chart import router as chart_router
 from app.web.pages import STATIC_DIR
 from app.web.pages import router as pages_router
@@ -63,5 +64,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.include_router(router, prefix="/api")
     app.include_router(pages_router)
     app.include_router(chart_router)
+    app.include_router(backtest_router)
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app

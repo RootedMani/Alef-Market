@@ -1,0 +1,49 @@
+{# BacktestResult: the range, the small-sample warning, the summary, the equity chart
+   (numbers in #bt-data for chart.js), one plain line per metric, the latest trades. #}
+{% from "_ui.html" import placeholder, error_card %}
+{% if p.failure %}
+  {% if p.failure.placeholder %}{{ placeholder("این بخش به‌زودی آماده می‌شود") }}{% else %}{{ error_card(p.failure.error.message_fa) }}{% endif %}
+{% else %}
+{% set r = p.result %}{% set q = r.request %}
+<div class="run-result">
+  <p class="muted">
+    روی <bdi dir="ltr">{{ q.symbol }}</bdi>، کندل <bdi dir="ltr">{{ q.timeframe }}</bdi>
+    {% if q.start_ts is not none and q.end_ts is not none %}
+    از <bdi dir="ltr">{{ q.start_ts|date(tz) }}</bdi> تا <bdi dir="ltr">{{ q.end_ts|date(tz) }}</bdi> (به وقت تهران)
+    {% endif %}
+  </p>
+  {% if p.sample_note %}<p class="sample-note" role="note">{{ p.sample_note }}</p>{% endif %}
+  {% if r.summary %}<p class="narrative">{{ r.summary.text_fa|ltr }}</p>{% endif %}
+
+  <div id="bt-chart" class="chart bt-chart" dir="ltr"></div>
+  <p class="legend muted">
+    <span class="swatch swatch-ema"></span>این ایده
+    <span class="swatch swatch-hold"></span>فقط نگه‌داشتن
+    <span class="legend-note">▲ ورود · ● خروج (سبز با سود، قرمز با زیان) · زمان‌ها به وقت تهران</span>
+  </p>
+  <script type="application/json" id="bt-data">{{ p.chart_json|safe }}</script>
+
+  <dl class="metrics">
+    {% for m in p.metrics %}
+    <div class="metric">
+      <dt>{{ m.label }}</dt>
+      <dd class="value"><bdi dir="ltr">{{ m.value }}</bdi></dd>
+      <dd class="plain muted">{{ m.plain|ltr }}</dd>
+    </div>
+    {% endfor %}
+  </dl>
+
+  {% if p.trades %}
+  <h3>آخرین معامله‌ها</h3>
+  <ul class="rows trades">
+    {% for t in p.trades %}
+    <li class="row {{ 'win' if t.pnl > 0 else 'loss' }}">
+      <span>ورود <bdi dir="ltr">{{ t.entry_ts|date(tz) }} {{ t.entry_ts|clock(tz) }}</bdi></span>
+      <span>خروج <bdi dir="ltr">{{ t.exit_ts|clock(tz) }}</bdi> · {{ p.exit_fa[t.exit_reason] }}</span>
+      <bdi dir="ltr" class="pnl">{{ "%+.2f%%"|format(t.pnl_pct) }}</bdi>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>
+{% endif %}

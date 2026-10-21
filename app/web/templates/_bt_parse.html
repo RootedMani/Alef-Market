@@ -1,0 +1,55 @@
+{# ParseResult as a card: the code-written readback (ok) or the Persian message (the other
+   three statuses). `p` comes from app.web.backtest. #}
+{% from "_ui.html" import placeholder, error_card %}
+{% if p.failure %}
+  {% if p.failure.placeholder %}{{ placeholder("این بخش به‌زودی آماده می‌شود") }}{% else %}{{ error_card(p.failure.error.message_fa) }}{% endif %}
+{% else %}
+{% set r = p.result %}
+<section class="card parse-card" data-status="{{ r.status }}">
+  <h2>{{ p.title }}</h2>
+  {% if r.status == "ok" %}
+    {% if r.changes_fa %}
+    <div class="changes">
+      <strong>تغییرها:</strong>
+      <ul>{% for c in r.changes_fa %}<li>{{ c|ltr }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+    <p class="readback">{{ r.readback_fa|ltr }}</p>
+
+    <form class="run-form" hx-post="/fragments/backtest/run" hx-target="#bt-run" hx-swap="innerHTML"
+          hx-indicator="#bt-run-loading" hx-disabled-elt="find button">
+      <input type="hidden" name="strategy" value="{{ p.strategy_json }}">
+      <input type="hidden" name="symbol" value="{{ p.run.symbol }}">
+      {% if p.run.start_ts is not none %}
+      <input type="hidden" name="start_ts" value="{{ p.run.start_ts }}">
+      <input type="hidden" name="end_ts" value="{{ p.run.end_ts }}">
+      {% endif %}
+      <div class="form-row">
+        <button type="submit" class="btn btn-primary">اجرای آزمون</button>
+        <span id="bt-run-loading" class="htmx-indicator loading" role="status">در حال اجرای آزمون روی داده‌های گذشته…</span>
+      </div>
+    </form>
+
+    <form class="edit-form" hx-post="/fragments/backtest/edit" hx-target="#bt-result" hx-swap="innerHTML"
+          hx-indicator="#bt-edit-loading" hx-disabled-elt="find button">
+      <input type="hidden" name="strategy" value="{{ p.strategy_json }}">
+      <input type="hidden" name="symbol" value="{{ p.run.symbol }}">
+      <label for="bt-edit" class="field-label">چیزی را عوض کنید</label>
+      <div class="form-row">
+        <input id="bt-edit" name="text" dir="auto" minlength="2" maxlength="500" required
+               placeholder="مثلاً: حد ضرر رو 3 درصد کن">
+        <button type="submit" class="btn">اعمال تغییر</button>
+      </div>
+      <span id="bt-edit-loading" class="htmx-indicator loading" role="status">در حال اعمال تغییر…</span>
+      <div id="bt-edit-msg" aria-live="polite"></div>
+    </form>
+
+    <div id="bt-run" aria-live="polite"></div>
+  {% else %}
+    <div class="placeholder is-calm" role="status">
+      <span class="placeholder-icon" aria-hidden="true"></span>
+      <div><p class="message">{{ r.message_fa|ltr }}</p></div>
+    </div>
+  {% endif %}
+</section>
+{% endif %}

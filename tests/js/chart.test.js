@@ -165,3 +165,23 @@ test("empty and stale responses are flagged for a calm card", () => {
   assert.equal(C.seriesProblem({ candles: [{ ts: 1 }], stale: true }), "stale");
   assert.equal(C.seriesProblem({ candles: [{ ts: 1 }], stale: false }), null);
 });
+
+test("backtest chart: Tehran times, sorted marks, win/loss colours", () => {
+  const H = 3600000;
+  const d = {
+    offset: TEHRAN,
+    equity: [[DAY_START, 10000], [DAY_START + 20.5 * H, 10050], [DAY_START + 21 * H, 9990]],
+    hold: [[DAY_START, 10000], [DAY_START + 20.5 * H, 10020], [DAY_START + 21 * H, 10010]],
+    trades: [[DAY_START + 21 * H, DAY_START + 21 * H, 0], [DAY_START, DAY_START + 20.5 * H, 1]],
+  };
+  const s = C.backtestSeries(d, { entry: "E", win: "W", loss: "L" });
+  assert.equal(C.fmtChartTime(s.equity[1].time), "00:00"); // 20:30 UTC = Tehran midnight
+  assert.equal(C.fmtChartDate(s.equity[1].time), "2026-10-11");
+  assert.equal(C.fromChartTime(s.hold[2].time, TEHRAN), DAY_START + 21 * H);
+  const times = s.markers.map((m) => m.time);
+  assert.deepEqual(times, [...times].sort((a, b) => a - b), "markers must be sorted for the chart");
+  const exits = s.markers.filter((m) => m.shape === "circle").map((m) => m.color);
+  assert.deepEqual(exits.sort(), ["L", "W"]);
+  const equityTimes = new Set(s.equity.map((p) => p.time));
+  assert.ok(s.markers.every((m) => equityTimes.has(m.time)), "every mark sits on an equity point");
+});
