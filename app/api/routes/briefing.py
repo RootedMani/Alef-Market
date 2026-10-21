@@ -22,6 +22,6 @@ def get_briefing(
     as_of_ts: Annotated[int | None, Query(ge=0)] = None,
 ) -> Briefing:
     """Replay: as_of_ts is the replay start. Live: omit it (server uses now)."""
-    if settings.mock_api:
+    if settings.mock_for("briefing"):
         return mocks.briefing()
     return features.get_briefing(db, settings, as_of_ts=as_of_ts)

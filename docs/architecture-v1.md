@@ -247,7 +247,7 @@ Health(status: ok|degraded, version, env, market_mode, mock_api, db_ok)
 
 ## 4. API
 
-All JSON lives under `/api`. Interactive docs: `http://127.0.0.1:8000/docs`. Unless marked *public*, endpoints need the session cookie (401 otherwise). Errors always return `ApiError`. With `ALEF_MOCK_API=true`, every endpoint below returns contract-valid example data from `app/api/mocks.py`; without it, unbuilt endpoints return **501** with `code="not_implemented"`.
+All JSON lives under `/api`. Interactive docs: `http://127.0.0.1:8000/docs`. Unless marked *public*, endpoints need the session cookie (401 otherwise). Errors always return `ApiError`. With `ALEF_MOCK_API=true`, every endpoint below returns contract-valid example data from `app/api/mocks.py`; without it, unbuilt endpoints return **501** with `code="not_implemented"`. `ALEF_MOCK_ENDPOINTS=annotations,why,briefing` mocks only the listed unbuilt endpoints (`Settings.mock_for(name)`); the rest stay real. Both are off by default, and the web pages show a calm placeholder card for a 501.
 
 | Method & path | Request | Response | Notes |
 |---|---|---|---|
@@ -324,7 +324,7 @@ Startup makes **no network calls**, so the app boots with Wi-Fi off. On demo day
 - **If a key leaks** (for example, committed by mistake): revoke it at the provider first, then remove it from Git history. Rotating is faster than history surgery.
 - Tests build `Settings(_env_file=None, …)`, so your real `.env` never affects them.
 
-Main settings: `env`, `log_level`, `mock_api`, `db_path`, `data_dir`, `market_mode`, `exchange`, `exchange_timeout_ms` (10 s), `exchange_proxy`, `news_proxy`, `replay_exchange`, `llm_cache_mode`, `llm_timeout_s` (8 s), `llm_proxy` (LLM APIs only; separate from `exchange_proxy`; every client gets its proxy from `proxy_for("llm"|"exchange"|"news")` and ignores the shell's `HTTP(S)_PROXY`/`ALL_PROXY`), `llm_provider_order`, `llm_task_providers` (per-task order, e.g. `ALEF_LLM_TASK_PROVIDERS='{"strategy_parse":["gemini"]}'`: those first, the rest after), `*_keys`, `*_model`, `session_days`, `cookie_secure`, `display_tz`.
+Main settings: `env`, `log_level`, `mock_api`, `mock_endpoints` (comma-separated: `annotations`, `why`, `briefing`; an unknown name fails at startup), `db_path`, `data_dir`, `market_mode`, `exchange`, `exchange_timeout_ms` (10 s), `exchange_proxy`, `news_proxy`, `replay_exchange`, `llm_cache_mode`, `llm_timeout_s` (8 s), `llm_proxy` (LLM APIs only; separate from `exchange_proxy`; every client gets its proxy from `proxy_for("llm"|"exchange"|"news")` and ignores the shell's `HTTP(S)_PROXY`/`ALL_PROXY`), `llm_provider_order`, `llm_task_providers` (per-task order, e.g. `ALEF_LLM_TASK_PROVIDERS='{"strategy_parse":["gemini"]}'`: those first, the rest after), `*_keys`, `*_model`, `session_days`, `cookie_secure`, `display_tz`.
 
 ---
 
@@ -413,7 +413,7 @@ make check                    # lint + tests, same as CI
 make reset-demo               # rebuild var/alef.db
 ```
 
-With `ALEF_MOCK_API=true` in `.env` (the `.env.example` default) the home page draws a mock BTC chart, and every endpoint returns example data.
+Mocks are off by default (`.env.example`): pages use the real endpoints and show a placeholder card where one is not built yet. With `ALEF_MOCK_API=true` every endpoint returns example data from `app/api/mocks.py`. Local prices without recorded seed files: `make synthetic-market`, then run with `ALEF_REPLAY_EXCHANGE=synthetic`.
 
 ---
 

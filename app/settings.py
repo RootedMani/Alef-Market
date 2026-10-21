@@ -14,16 +14,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, get_args
+from typing import Annotated, Literal, get_args
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, SecretStr, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
 ProviderName = Literal["groq", "gemini", "openrouter"]
 ProxyClient = Literal["llm", "exchange", "news"]
+# Endpoints that can serve mocks/example data on their own (ALEF_MOCK_ENDPOINTS): the unbuilt ones.
+MockEndpoint = Literal["annotations", "why", "briefing"]
 PROXY_SCHEMES = ("http", "https", "socks5", "socks5h")
 
 
@@ -84,8 +86,10 @@ class Settings(BaseSettings):
     display_tz: str = "Asia/Tehran"
     mock_api: bool = Field(
         default=False,
-        description="Serve example data from app/api/mocks.py for endpoints not built yet.",
+        description="Serve example data from app/api/mocks.py for every endpoint.",
     )
+    # Per endpoint, e.g. ALEF_MOCK_ENDPOINTS=annotations,why: only these serve example data.
+    mock_endpoints: Annotated[tuple[MockEndpoint, ...], NoDecode] = ()
 
     # --- storage ---
     db_path: Path = ROOT_DIR / "var" / "alef.db"
@@ -121,6 +125,18 @@ class Settings(BaseSettings):
     groq_model: str = "llama-3.3-70b-versatile"
     gemini_model: str = "gemini-2.5-flash"
     openrouter_model: str = "meta-llama/llama-3.3-70b-instruct:free"
+
+    @field_validator("mock_endpoints", mode="before")
+    @classmethod
+    def _split_mock_endpoints(cls, value: object) -> object:
+        """``"annotations, why"`` -> ``("annotations", "why")``; lists pass through."""
+        if isinstance(value, str):
+            return tuple(p.strip() for p in value.split(",") if p.strip())
+        return value
+
+    def mock_for(self, endpoint: MockEndpoint) -> bool:
+        """True if this endpoint serves example data: ``ALEF_MOCK_API`` or listed by name."""
+        return self.mock_api or endpoint in self.mock_endpoints
 
     @property
     def replay_source_exchange(self) -> str:

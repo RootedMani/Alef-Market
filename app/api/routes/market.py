@@ -72,7 +72,7 @@ def annotations(
     timeframe: Timeframe = "1m",
 ) -> ChartAnnotations:
     """Levels, patterns and move markers computed only from bars up to as_of_ts."""
-    if settings.mock_api:
+    if settings.mock_for("annotations"):
         return mocks.annotations(symbol, timeframe)
     return market.get_annotations(
         db, settings, symbol=symbol, timeframe=timeframe, start_ts=start_ts, as_of_ts=as_of_ts
@@ -88,6 +88,6 @@ def why(
     ts: Ts,
     timeframe: Timeframe = "1m",
 ) -> WhyExplanation:
-    if settings.mock_api:
+    if settings.mock_for("why"):
         return mocks.why(symbol, timeframe, ts)
     return features.explain_move(db, settings, symbol=symbol, timeframe=timeframe, ts=ts)
