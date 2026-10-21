@@ -1,10 +1,18 @@
-{# Small shared pieces. A placeholder is the calm card shown where a feature isn't built yet. #}
-{% macro placeholder(title, text=None) %}
-<div class="placeholder" role="status" dir="rtl">
+{# Small shared pieces. A placeholder is the calm card shown where a feature isn't built yet
+   (the API answered 501); an error card shows an ApiError's message_fa just as calmly. #}
+{% macro placeholder(title, text=None, key=None) %}
+<div class="placeholder" role="status" dir="rtl"{% if key %} data-placeholder="{{ key }}"{% endif %}>
   <span class="placeholder-icon" aria-hidden="true"></span>
   <div>
     <p class="placeholder-title">{{ title }}</p>
     {% if text %}<p class="muted">{{ text }}</p>{% endif %}
   </div>
+</div>
+{% endmacro %}
+
+{% macro error_card(message) %}
+<div class="placeholder is-error" role="status" dir="rtl">
+  <span class="placeholder-icon" aria-hidden="true"></span>
+  <div><p class="placeholder-title">{{ message }}</p></div>
 </div>
 {% endmacro %}

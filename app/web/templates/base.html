@@ -21,6 +21,7 @@
         <option value="{{ s }}"{% if s == symbol %} selected{% endif %}>{{ s }}</option>
         {% endfor %}
       </select>
+      {% block pair_fields %}{% endblock %}
       <noscript><button type="submit">نمایش</button></noscript>
     </form>
 

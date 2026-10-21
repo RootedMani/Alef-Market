@@ -38,6 +38,18 @@ def load_persona(path: Path) -> tuple[dict, list[TradeRecord]]:
     return doc["meta"], [TradeRecord.model_validate(t) for t in doc["trades"]]
 
 
+def demo_entry_ts(settings: Settings) -> int | None:
+    """When the stage trade is opened (persona ``meta.demo_entry_ts``); None without Sara.
+
+    Regenerating the persona (``make persona``) moves it, and with it the chart's demo day.
+    """
+    path = persona_path(settings)
+    if not path.exists():
+        return None
+    ts = json.loads(path.read_text(encoding="utf-8"))["meta"].get("demo_entry_ts")
+    return int(ts) if ts is not None else None
+
+
 def demo_user(db: Session) -> UserPublic | None:
     row = db.scalars(select(UserRow).where(UserRow.is_demo).order_by(UserRow.id).limit(1)).first()
     if row is None:
