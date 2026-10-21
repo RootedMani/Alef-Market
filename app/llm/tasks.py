@@ -83,7 +83,7 @@ TASKS: dict[str, PromptTask] = {
         ),
         PromptTask(
             "strategy_edit",
-            3,
+            4,
             "json",
             StrategyParseOutput,
             use_glossary=False,

@@ -246,7 +246,7 @@ def test_the_edit_demo_changes_the_stop_and_says_so(client: TestClient) -> None:
     assert out.changes_fa == ["حد ضرر از 2% به 3% تغییر کرد"]
     assert out.readback_fa == strategy_to_persian(out.strategy)
     assert out.detected_lang == "fa" and out.meta is not None
-    assert out.meta.prompt == "strategy_edit.v3"
+    assert out.meta.prompt == TASKS["strategy_edit"].prompt_id
     sent = json.loads(p.calls[0][1].removeprefix("<facts>\n").removesuffix("\n</facts>"))
     assert sent == {"strategy": OLD.model_dump(mode="json"), "instruction": "حد ضرر رو 3 درصد کن"}
 
@@ -256,6 +256,7 @@ def test_an_edit_that_changes_nothing_is_refused(client: TestClient) -> None:
     out = edit(client, "make it better")
     assert out.status == "unclear" and out.strategy is None and out.changes_fa == []
     assert out.message_fa is not None and "تغییر" in out.message_fa
+    assert SUPPORTED_MARK in out.message_fa
 
 
 def test_an_edit_number_not_in_the_instruction_is_refused(client: TestClient) -> None:
@@ -311,3 +312,9 @@ def test_an_edit_that_only_reorders_the_conditions_is_refused(client: TestClient
     use(client, answer(data))
     out = edit(client, "swap the two conditions")
     assert out.status == "unclear" and out.strategy is None
+
+
+def test_the_mock_edit_names_the_current_edit_prompt(mock_client: TestClient) -> None:
+    body = {"strategy": OLD.model_dump(mode="json"), "text": "حد ضرر رو 2 درصد کن"}
+    out = ParseResult.model_validate(mock_client.post("/api/backtest/edit", json=body).json())
+    assert out.meta is not None and out.meta.prompt == TASKS["strategy_edit"].prompt_id

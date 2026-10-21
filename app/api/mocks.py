@@ -61,6 +61,7 @@ from app.contracts.strategy import (
     PriceRef,
     Strategy,
 )
+from app.llm.tasks import TASKS
 
 T0 = int(datetime(2026, 10, 10, 6, 30, tzinfo=UTC).timestamp() * 1000)  # 10:00 Tehran
 _BASE_PRICE = {"BTC/USDT": 63_000.0, "ETH/USDT": 2_450.0}
@@ -251,7 +252,7 @@ def parse_result() -> ParseResult:
         strategy=_strategy(),
         readback_fa=strategy_to_persian(_strategy()),
         detected_lang="fa",
-        meta=TextMeta(source="cache", prompt="strategy_parse.v3", provider="groq#1"),
+        meta=TextMeta(source="cache", prompt=TASKS["strategy_parse"].prompt_id, provider="groq#1"),
     )
 
 
@@ -265,7 +266,7 @@ def edit_result() -> ParseResult:
         readback_fa=strategy_to_persian(new),
         changes_fa=strategy_changes_fa(old, new),
         detected_lang="fa",
-        meta=TextMeta(source="cache", prompt="strategy_edit.v3", provider="groq#1"),
+        meta=TextMeta(source="cache", prompt=TASKS["strategy_edit"].prompt_id, provider="groq#1"),
     )
 
 

@@ -28,7 +28,7 @@ def test_every_task_has_its_prompt_file() -> None:
 # new id's hash here.
 PROMPT_HASHES = {
     "strategy_parse.v3": "db60110a48f208d8",
-    "strategy_edit.v3": "978896c2738deb9f",
+    "strategy_edit.v4": "100a3ff01bda3c9a",
     "why.v2": "7dada32cf406ce8b",
     "briefing.v2": "fe671168fdc24ca4",
     "backtest_summary.v2": "0753d9fea9ab6aa4",
@@ -47,11 +47,19 @@ def test_a_prompt_never_changes_without_a_new_version(name: str) -> None:
     )
 
 
+def test_the_edit_prompt_never_drops_what_the_instruction_does_not_mention() -> None:
+    """v3 said "omit sizing or an exit the instruction doesn't give", which reads as "drop the
+    target when told to change the stop"; code can't refuse a removal (it adds no number)."""
+    text = system_prompt("strategy_edit")
+    assert "Never remove" in text
+    assert "you omit" not in text
+
+
 @pytest.mark.parametrize("name", ["strategy_parse", "strategy_edit"])
 def test_strategy_prompts_state_the_code_rules(name: str) -> None:
     """Code refuses these, so the prompt must ask for them (else every answer is a retry)."""
     text = system_prompt(name)
-    assert TASKS[name].version == 3
+    assert TASKS[name].version == {"strategy_parse": 3, "strategy_edit": 4}[name]
     assert '"kind": "cond"' in text  # the edit prompt carries the schema too
     assert "Never write a number" in text  # defaults are filled by code
     assert '"sizing"' in text and "omit" in text.lower()
