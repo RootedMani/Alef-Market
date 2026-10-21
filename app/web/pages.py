@@ -11,7 +11,6 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app import __version__
-from app.api.deps import SettingsDep
 from app.settings import Settings
 from app.web import fmt
 
@@ -130,10 +129,3 @@ def render_page(
 @router.get("/")
 def home() -> RedirectResponse:
     return RedirectResponse("/chart", status_code=307)
-
-
-@router.get("/briefing", response_class=HTMLResponse)
-def briefing_page(
-    request: Request, settings: SettingsDep, symbol: str | None = None
-) -> HTMLResponse:
-    return render_page(request, settings, "briefing", symbol)

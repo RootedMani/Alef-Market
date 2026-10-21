@@ -1,9 +1,72 @@
 {% extends "base.html" %}
-{% from "_ui.html" import placeholder %}
+{% from "_ui.html" import placeholder, error_card %}
 
 {% block content %}
+{% if failure %}
 <section class="card">
+  {% if failure.placeholder %}
   {{ placeholder("خلاصهٔ صبح به‌زودی آماده می‌شود",
-                 "هر صبح پیش از شروع معامله، وضعیت بازار، خبرهای مهم و رویدادهای اقتصادی روز را اینجا خلاصه می‌بینید.") }}
+                 "هر صبح پیش از شروع معامله، وضعیت BTC و ETH، سطح‌های نزدیک، رویدادهای اقتصادی و خبرهای مهم روز اینجا خلاصه می‌شود.",
+                 key="briefing") }}
+  {% else %}
+  {{ error_card(failure.error.message_fa) }}
+  {% endif %}
 </section>
+{% else %}
+{% set f = b.facts %}
+<p class="muted">وضعیت بازار در <bdi dir="ltr">{{ f.as_of_ts|date(tz) }} {{ f.as_of_ts|clock(tz) }}</bdi> (به وقت تهران)</p>
+
+<section class="card">
+  <h2>چه گذشت</h2>
+  <ul class="prose-list">{% for line in b.prose.what_happened_fa %}<li>{{ line|ltr }}</li>{% endfor %}</ul>
+  <h3>نکته‌های امروز</h3>
+  <ul class="prose-list">{% for line in b.prose.watch_fa %}<li>{{ line|ltr }}</li>{% endfor %}</ul>
+</section>
+
+<div class="panels">
+  {% for c in pairs %}{% set p = c.p %}
+  <section class="card pair-card">
+    <h2><bdi dir="ltr">{{ p.symbol }}</bdi> <bdi dir="ltr" class="pnl {{ 'win' if p.change_24h_pct > 0 else 'loss' }}">{{ "%+.2f%%"|format(p.change_24h_pct) }}</bdi></h2>
+    <dl class="kv">
+      <div><dt>آخرین قیمت</dt><dd><bdi dir="ltr">{{ p.last_price|price }} USDT</bdi></dd></div>
+      <div><dt>بالاترین و پایین‌ترین 24 ساعت</dt><dd><bdi dir="ltr">{{ p.low_24h|price }} – {{ p.high_24h|price }}</bdi></dd></div>
+      {% if p.nearest_support %}<div><dt>نزدیک‌ترین حمایت</dt><dd><bdi dir="ltr">{{ p.nearest_support.low|price }} – {{ p.nearest_support.high|price }}</bdi>{% if p.dist_to_support_pct is not none %} · <bdi dir="ltr">{{ p.dist_to_support_pct|pct }}</bdi> فاصله{% endif %}</dd></div>{% endif %}
+      {% if p.nearest_resistance %}<div><dt>نزدیک‌ترین مقاومت</dt><dd><bdi dir="ltr">{{ p.nearest_resistance.low|price }} – {{ p.nearest_resistance.high|price }}</bdi>{% if p.dist_to_resistance_pct is not none %} · <bdi dir="ltr">{{ p.dist_to_resistance_pct|pct }}</bdi> فاصله{% endif %}</dd></div>{% endif %}
+    </dl>
+    <p class="muted small">{{ c.volatility|ltr }} · {{ c.volume|ltr }}</p>
+  </section>
+  {% endfor %}
+</div>
+
+<section class="card">
+  <h2>همبستگی <bdi dir="ltr">BTC</bdi> و <bdi dir="ltr">ETH</bdi>: <bdi dir="ltr">{{ "%.2f"|format(f.btc_eth_corr_24h) }}</bdi></h2>
+  <p class="muted">{{ corr|ltr }}</p>
+</section>
+
+<div class="panels">
+  <section class="card">
+    <h2>رویدادهای اقتصادی امروز</h2>
+    {% if f.events %}
+    <ul class="rows">
+      {% for e in f.events %}
+      <li class="row"><bdi dir="ltr">{{ e.ts|clock(tz) }}</bdi> <span>{{ e.title_fa }}</span> <span class="tag{% if e.importance == 'high' %} tag-on{% endif %}">{{ importance_fa[e.importance] }}</span></li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="muted">رویداد زمان‌بندی‌شده‌ای ثبت نشده است.</p>{% endif %}
+  </section>
+  <section class="card">
+    <h2>خبرهای اخیر</h2>
+    {% if f.headlines %}
+    <ul class="headlines">
+      {% for h in f.headlines %}
+      <li><span dir="ltr" lang="en">{{ h.title }}</span>
+        <span class="muted">{{ h.source }} · <bdi dir="ltr">{{ h.published_ts|clock(tz) }}</bdi></span></li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="muted">خبر تازه‌ای پیدا نشد.</p>{% endif %}
+  </section>
+</div>
+{% endif %}
+
+<p class="next"><a class="btn btn-primary" href="/chart">رفتن به نمودار</a></p>
 {% endblock %}
