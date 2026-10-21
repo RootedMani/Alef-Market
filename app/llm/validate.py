@@ -1,6 +1,7 @@
 """Deterministic checks on LLM output. Nothing reaches the user without passing these.
 
-- JSON tasks: strip code fences, parse, validate with the task's Pydantic model.
+- JSON tasks: strip code fences, parse, validate with the task's Pydantic model, then the
+  task's own ``check`` on the raw JSON (parse/edit: ``strategy_checks``, "never a guess").
 - Prose tasks: Persian text, Latin digits only, no buy/sell advice, and **every number in the
   text must appear in the facts** (hard rule 1: the LLM never computes numbers).
 
@@ -63,13 +64,21 @@ class OutputInvalid(ValueError):
 # ---------- JSON output ----------
 
 
-def parse_json_output[T: BaseModel](raw: str, model: type[T]) -> T:
-    """Parse ``raw`` (possibly wrapped in ```json fences) into ``model`` or raise OutputInvalid."""
+def load_json_output(raw: str) -> Any:
+    """The JSON in ``raw`` (possibly wrapped in ```json fences), or raise OutputInvalid."""
     text = _FENCE_RE.sub("", raw.strip())
     try:
-        data = json.loads(text)
+        return json.loads(text)
     except json.JSONDecodeError as exc:
         raise OutputInvalid([f"not valid JSON: {exc.msg}"]) from exc
+
+
+def parse_json_output[T: BaseModel](raw: str, model: type[T]) -> T:
+    """Parse ``raw`` (possibly wrapped in ```json fences) into ``model`` or raise OutputInvalid."""
+    return _to_model(load_json_output(raw), model)
+
+
+def _to_model[T: BaseModel](data: Any, model: type[T]) -> T:
     try:
         return model.model_validate(data)
     except ValidationError as exc:
@@ -177,7 +186,11 @@ def validate_output(task: PromptTask, raw: str, facts: Any) -> BaseModel | str:
     """
     if task.output == "json":
         assert task.output_model is not None
-        return parse_json_output(raw, task.output_model)
+        data = load_json_output(raw)
+        value = _to_model(data, task.output_model)
+        if task.check is not None and (problems := task.check(data, value, facts)):
+            raise OutputInvalid(problems)
+        return value
     problems = prose_problems(raw, facts, max_chars=task.max_chars)
     if problems:
         raise OutputInvalid(problems)

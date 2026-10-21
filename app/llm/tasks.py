@@ -14,15 +14,17 @@ changes without a new version.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
 from app.contracts.briefing import BriefingProse
 from app.contracts.strategy import StrategyParseOutput
+from app.llm.strategy_checks import edit_problems, parse_problems
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 GLOSSARY_FILE = PROMPTS_DIR / "glossary_fa.md"
@@ -53,6 +55,8 @@ class PromptTask:
     deadline_s: float = 5.0  # the whole ladder for one call
     max_tokens: int = 800
     retry_hint: str = ""  # appended to the problem list on the one retry
+    # JSON tasks: (raw JSON, validated model, facts) -> problems; non-empty = invalid output
+    check: Callable[[Any, BaseModel, Any], list[str]] | None = None
 
     @property
     def prompt_id(self) -> str:
@@ -75,6 +79,7 @@ TASKS: dict[str, PromptTask] = {
             deadline_s=15,
             max_tokens=1000,
             retry_hint=RETRY_HINT_STRATEGY,
+            check=parse_problems,
         ),
         PromptTask(
             "strategy_edit",
@@ -85,6 +90,7 @@ TASKS: dict[str, PromptTask] = {
             deadline_s=15,
             max_tokens=1000,
             retry_hint=RETRY_HINT_STRATEGY,
+            check=edit_problems,
         ),
         PromptTask(
             "why",
