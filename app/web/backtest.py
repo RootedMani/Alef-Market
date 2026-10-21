@@ -20,11 +20,16 @@ from pydantic import ValidationError
 from app.api import mocks
 from app.api.deps import DbDep, GatewayDep, SettingsDep, get_current_user
 from app.api.errors import api_error, api_error_for
-from app.contracts.backtest import BacktestMetrics, BacktestRequest, BacktestResult, EquityPoint
+from app.contracts.backtest import (
+    SMALL_SAMPLE_TRADES,
+    BacktestMetrics,
+    BacktestRequest,
+    BacktestResult,
+    EquityPoint,
+)
 from app.contracts.strategy import EditRequest, ParseRequest, ParseResult, Strategy
 from app.llm.demo_prompts import DEMO_PROMPTS
 from app.services import features
-from app.services.backtest import SMALL_SAMPLE_TRADES
 from app.services.demo import demo_entry_ts
 from app.settings import Settings
 from app.web.chart import chart_days, parse_int, pick_day

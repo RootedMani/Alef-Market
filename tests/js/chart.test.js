@@ -185,3 +185,14 @@ test("backtest chart: Tehran times, sorted marks, win/loss colours", () => {
   const equityTimes = new Set(s.equity.map((p) => p.time));
   assert.ok(s.markers.every((m) => equityTimes.has(m.time)), "every mark sits on an equity point");
 });
+
+test("equity axis ticks are always a Tehran date, never a clock time", () => {
+  const H = 3600000;
+  const at = (ts) => C.toChartTime(ts, TEHRAN);
+  const ticks = [DAY_START + 8 * H + 40 * MIN, DAY_START + 20.5 * H, DAY_START - 1, DAY_START];
+  // 12:10 Tehran, Tehran midnight (20:30 UTC), just before UTC midnight, UTC midnight
+  assert.deepEqual(ticks.map((ts) => C.equityTick(at(ts))), ["10-10", "10-11", "10-10", "10-10"]);
+  for (const ts of ticks) {
+    for (const type of [0, 1, 2, 3, 4]) assert.match(C.equityTick(at(ts), type), /^\d{2}-\d{2}$/);
+  }
+});

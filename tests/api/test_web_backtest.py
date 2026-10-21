@@ -12,7 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.deps import get_gateway
-from app.contracts.backtest import BacktestMetrics
+from app.contracts.backtest import SMALL_SAMPLE_TRADES, BacktestMetrics
 from app.contracts.strategy import Strategy
 from app.data.store import upsert_candles
 from app.data.synthetic import synthetic_1m
@@ -20,6 +20,7 @@ from app.db.engine import create_schema, make_engine, make_session_factory, sess
 from app.llm.demo_prompts import DEMO_PROMPTS
 from app.llm.gateway import LLMGateway
 from app.main import create_app
+from app.services.backtest import summary_facts
 from app.services.demo import ensure_demo_user
 from app.web import backtest as bt
 from tests.conftest import make_settings
@@ -258,3 +259,16 @@ def test_mock_mode_renders_every_fragment(tmp_path: Path) -> None:
         assert "تغییرها:" in edit.text
         run = post(c, "run", strategy=json.dumps(STRATEGY))
         assert run.text.count('<div class="metric">') == 9
+
+
+@pytest.mark.parametrize("n", [0, 1, SMALL_SAMPLE_TRADES - 1, SMALL_SAMPLE_TRADES, 50])
+def test_page_warning_and_summary_flag_share_one_threshold(n: int) -> None:
+    m = BacktestMetrics(
+        total_return_pct=1.0,
+        buy_hold_return_pct=1.0,
+        max_drawdown_pct=1.0,
+        n_trades=n,
+        exposure_pct=10.0,
+        fees_paid=1.0,
+    )
+    assert summary_facts(m)["small_sample"] == (bt.sample_note(n) is not None)

@@ -133,6 +133,10 @@
 
   // ---- the backtest result chart: equity vs just holding, trade marks, Tehran time ----
 
+  // One formatter for every tick on the equity axis: always the Tehran date (MM-DD), never a
+  // clock time, whatever tick type Lightweight Charts asks for (it once mixed «12:10» in).
+  const equityTick = (t) => fmtChartDate(t).slice(5);
+
   function backtestSeries(d, colors) {
     const line = ([ts, v]) => ({ time: toChartTime(ts, d.offset), value: v });
     const marks = [];
@@ -389,8 +393,10 @@
       entry: css("--accent"), win: css("--up"), loss: css("--down"),
     });
     const chart = LC.createChart(el, chartOptions());
-    // the whole range must fit even on a phone: ~1,200 points in ~340 px
-    chart.timeScale().applyOptions({ minBarSpacing: 0.01 });
+    // dates only on the axis; the whole range must fit even on a phone (~1,200 points)
+    chart.timeScale().applyOptions({
+      timeVisible: false, tickMarkFormatter: equityTick, minBarSpacing: 0.01,
+    });
     const opts = { lineWidth: 2, lastValueVisible: false, priceLineVisible: false };
     const hold = chart.addSeries(LC.LineSeries, { ...opts, color: css("--muted"), lineStyle: 2 });
     const equity = chart.addSeries(LC.LineSeries, { ...opts, color: css("--accent") });
@@ -407,7 +413,7 @@
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
       STEP_MS, toChartTime, fromChartTime, fmtChartTime, fmtChartDate, fmtClock,
-      closedCount, emaMap, frameAt, Replay, seriesProblem, backtestSeries,
+      closedCount, emaMap, frameAt, Replay, seriesProblem, backtestSeries, equityTick,
     };
   }
 })();
