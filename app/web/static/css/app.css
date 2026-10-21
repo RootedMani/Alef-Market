@@ -415,6 +415,60 @@ h3 { font-size: 0.95rem; margin: 1rem 0 0.25rem; }
 .trades .win .pnl { color: var(--up); }
 .trades .loss .pnl { color: var(--down); }
 
+/* ---- paper-trade panel ---- */
+
+.fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem 0.75rem; }
+.fields label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.85rem; }
+.fields input, .fields select {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.3rem 0.5rem;
+}
+.fields small { font-size: 0.7rem; line-height: 1.4; }
+
+.kv { display: grid; grid-template-columns: 1fr; gap: 0.25rem 1rem; margin: 0.75rem 0; }
+.kv div { display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.2rem 0;
+  border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font-weight: 600; }
+.risk-line { margin: 0.25rem 0; font-size: 0.9rem; }
+
+.badge-live { color: var(--accent); border-color: var(--accent); }
+.badge-done { color: var(--text); border-color: var(--text); }
+.pnl.win, .win .pnl { color: var(--up); }
+.pnl.loss, .loss .pnl { color: var(--down); }
+#trade-msg:not(:empty), #reset-msg:not(:empty) { margin-top: 0.75rem; }
+
+/* ---- journal ---- */
+
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin: 0; }
+.stats div { padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 10px; }
+.stats dt { font-size: 0.75rem; color: var(--muted); }
+.stats dd { margin: 0; font-size: 1.05rem; font-weight: 700; }
+
+.insight { padding: 0.75rem 0.9rem; margin: 0.75rem 0; border: 1px solid var(--border);
+  border-radius: 12px; }
+.insight.is-highlighted { border: 2px solid var(--accent); background: var(--accent-soft); }
+.insight h3 { margin: 0.1rem 0 0.25rem; }
+.insight .tag { display: inline-block; margin: 0 0 0.25rem; }
+.insight-text { margin: 0 0 0.5rem; }
+.vs, .sample { margin: 0.2rem 0; font-size: 0.9rem; }
+.evidence { list-style: none; margin: 0.4rem 0 0; padding: 0; font-size: 0.85rem; }
+.evidence li { display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.15rem 0; }
+.review { margin-top: 1rem; padding-top: 0.5rem; border-top: 1px solid var(--border); }
+
+.bars { list-style: none; margin: 0; padding: 0; }
+.bars li { display: grid; grid-template-columns: 4.5rem 1fr; gap: 0.1rem 0.6rem; align-items: center;
+  padding: 0.25rem 0; font-size: 0.85rem; }
+.bars .muted { grid-column: 2; font-size: 0.75rem; }
+.bar { height: 0.55rem; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+.bar span { display: block; height: 100%; background: var(--accent); opacity: 0.7; }
+
+.trades .open .badge { font-size: 0.7rem; }
+details summary { cursor: pointer; color: var(--accent); margin-top: 0.5rem; }
+.reset { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
+
 /* ---- laptop: nav under the header, disclaimer alone at the bottom ---- */
 
 @media (min-width: 768px) {
@@ -423,6 +477,9 @@ h3 { font-size: 0.95rem; margin: 1rem 0 0.25rem; }
   .chart { height: 420px; }
   .bt-chart { height: 340px; }
   .metrics { grid-template-columns: repeat(3, 1fr); }
+  .fields { grid-template-columns: repeat(4, 1fr); }
+  .stats { grid-template-columns: repeat(4, 1fr); }
+  .kv { grid-template-columns: 1fr 1fr; }
   .panels { grid-template-columns: 1fr 1fr; }
 
   .tabs {

@@ -80,7 +80,8 @@
        data-start-ts="{{ state.start_ts }}" data-end-ts="{{ state.end_ts if state.end_ts is not none else '' }}"
        data-as-of-ts="{{ state.as_of_ts }}" data-initial-ts="{{ state.initial_ts }}" data-speed="{{ state.speed }}" data-playing="{{ 1 if state.playing else 0 }}"
        {% if state.stage_ts %}data-stage-ts="{{ state.stage_ts }}" data-jump-ts="{{ state.jump_ts }}"{% endif %}
-       data-tz-offset-ms="{{ state.tz_offset_ms }}" data-ema-period="{{ ema_period }}"></div>
+       data-tz-offset-ms="{{ state.tz_offset_ms }}" data-ema-period="{{ ema_period }}"
+       data-sync-bars="{{ trade.sync_bars }}"></div>
   <p class="legend muted">
     <span class="swatch swatch-ema"></span><bdi dir="ltr">EMA {{ ema_period }}</bdi>
     <span class="swatch swatch-vol"></span>حجم معاملات
@@ -99,6 +100,13 @@
       <div><p class="placeholder-title" data-slot="message">نمودار بارگذاری نشد.</p></div>
     </div>
   </template>
+</section>
+
+<section class="card trade-card">
+  <h2>معاملهٔ تمرینی</h2>
+  <p class="muted small">با پول مجازی؛ ورود با آخرین قیمت بسته‌شده در لحظهٔ فعلی بازپخش.</p>
+  {% if trade.start_ts is not none %}<input type="hidden" name="start_ts" value="{{ trade.start_ts }}" data-trade-start>{% endif %}
+  <div id="trade-panel">{% with p = trade %}{% include "_trade_panel.html" %}{% endwith %}</div>
 </section>
 
 <div class="panels">

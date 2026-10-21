@@ -59,6 +59,11 @@ def load_trades(db: Session, user_id: int) -> list[TradeRecord]:
     return [row_to_record(r) for r in rows]
 
 
+def trade_view(rec: TradeRecord) -> TradeView:
+    """One trade with its pnl, R and holding time (None while open)."""
+    return to_view(rec)
+
+
 def equity_now(db: Session, user_id: int) -> float:
     """Virtual account equity: the starting balance plus every closed trade's pnl."""
     views = [to_view(t) for t in load_trades(db, user_id)]

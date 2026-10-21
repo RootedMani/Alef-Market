@@ -23,6 +23,7 @@ templates.env.filters.update(
     date=fmt.fmt_date,
     price=fmt.fmt_price,
     pct=fmt.fmt_pct,
+    signed=fmt.fmt_signed,
     ltr=fmt.ltr_runs,
 )
 
@@ -136,10 +137,3 @@ def briefing_page(
     request: Request, settings: SettingsDep, symbol: str | None = None
 ) -> HTMLResponse:
     return render_page(request, settings, "briefing", symbol)
-
-
-@router.get("/journal", response_class=HTMLResponse)
-def journal_page(
-    request: Request, settings: SettingsDep, symbol: str | None = None
-) -> HTMLResponse:
-    return render_page(request, settings, "journal", symbol)

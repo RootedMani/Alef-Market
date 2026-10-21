@@ -1,0 +1,75 @@
+{# The paper-trade panel: the form (no trade open), the open trade (synced every few bars),
+   or the trade that just closed with the journal's highlighted card and review.
+   `p` comes from app.web.trading. #trade-msg is inside, so a fresh state clears old errors. #}
+{% from "_ui.html" import error_card %}
+{% from "_insight.html" import insight_card %}
+{% if p.failure %}
+  {{ error_card(p.failure.error.message_fa) }}
+{% elif p.closed %}
+  {% set t = p.closed %}
+  <div class="trade-state" data-state="closed">
+    <p><span class="badge badge-done">معامله بسته شد</span> <bdi dir="ltr">{{ t.symbol }}</bdi> · {{ p.exit_fa[t.exit_reason] }}</p>
+    <dl class="kv">
+      <div><dt>ورود</dt><dd><bdi dir="ltr">{{ t.entry_price|price }}</bdi> · ساعت <bdi dir="ltr">{{ t.entry_ts|clock(tz) }}</bdi></dd></div>
+      <div><dt>خروج</dt><dd><bdi dir="ltr">{{ t.exit_price|price }}</bdi> · ساعت <bdi dir="ltr">{{ t.exit_ts|clock(tz) }}</bdi></dd></div>
+      <div><dt>نتیجه</dt><dd class="pnl {{ 'win' if t.pnl > 0 else 'loss' }}"><bdi dir="ltr">{{ t.pnl|signed }} USDT ({{ "%+.2f%%"|format(t.pnl_pct) }})</bdi>{% if t.r_multiple is not none %} · <bdi dir="ltr">{{ "%+.2f"|format(t.r_multiple) }} R</bdi>{% endif %}</dd></div>
+    </dl>
+    {% for c in p.highlighted %}{{ insight_card(c) }}{% endfor %}
+    {% if p.review %}
+    <div class="review"><h3>مرور این معامله</h3><p>{{ p.review.narrative.text_fa|ltr }}</p></div>
+    {% endif %}
+    <div class="form-row">
+      <a class="btn btn-primary" href="/journal">دیدن ژورنال کامل</a>
+      <button type="button" class="btn" hx-get="/fragments/trades/panel?{{ {'symbol': p.symbol}|urlencode }}"
+              hx-include="[data-trade-start]" hx-target="#trade-panel">معاملهٔ تازه</button>
+    </div>
+    <div id="trade-msg" aria-live="polite"></div>
+  </div>
+{% elif p.open %}
+  {% set t = p.open %}
+  <div class="trade-state" data-state="open"
+       hx-post="/fragments/trades/sync" hx-trigger="alef:sync from:document"
+       hx-include="[data-clock='as_of_ts']" hx-target="#trade-panel" hx-swap="innerHTML">
+    <p><span class="badge badge-live">معامله باز</span> <bdi dir="ltr">{{ t.symbol }}</bdi> · ورود ساعت <bdi dir="ltr">{{ t.entry_ts|clock(tz) }}</bdi></p>
+    <dl class="kv">
+      <div><dt>قیمت ورود</dt><dd><bdi dir="ltr">{{ t.entry_price|price }} USDT</bdi></dd></div>
+      <div><dt>حد ضرر</dt><dd><bdi dir="ltr">{{ t.stop_price|price if t.stop_price else "—" }}</bdi></dd></div>
+      <div><dt>حد سود</dt><dd><bdi dir="ltr">{{ t.target_price|price if t.target_price else "—" }}</bdi></dd></div>
+      <div><dt>حجم</dt><dd><bdi dir="ltr">{{ "%.5f"|format(t.qty) }} {{ t.symbol.split("/")[0] }}</bdi></dd></div>
+    </dl>
+    {% if t.emotion %}<p class="muted small">یادداشت شخصی: {{ p.emotions[t.emotion] }}</p>{% endif %}
+    <p class="muted small">هر {{ p.sync_bars }} کندل بررسی می‌شود که حد ضرر یا حد سود رسیده یا نه.</p>
+    <button type="button" class="btn" hx-post="/fragments/trades/{{ t.id }}/close"
+            hx-include="[data-clock='as_of_ts']" hx-target="#trade-panel"
+            hx-confirm="معامله با آخرین قیمت بسته شود؟">بستن معامله</button>
+    <div id="trade-msg" aria-live="polite"></div>
+  </div>
+{% else %}
+  <form id="trade-form" class="trade-state" data-state="form"
+        hx-post="/fragments/trades/quote" hx-trigger="load, input changed delay:250ms, alef:sync from:document"
+        hx-include="[data-clock='as_of_ts'], [data-trade-start]" hx-target="#trade-quote">
+    <input type="hidden" name="symbol" value="{{ p.symbol }}">
+    <div class="fields">
+      <label>حد ضرر (%)
+        <input type="number" name="stop_pct" value="{{ p.stop_pct }}" min="0.1" max="50" step="0.1" dir="ltr" inputmode="decimal"></label>
+      <label>ریسک از سرمایه (%)
+        <input type="number" name="risk_pct" value="{{ p.risk_pct }}" min="0.1" max="10" step="0.1" dir="ltr" inputmode="decimal"></label>
+      <label>حد سود (%)
+        <input type="number" name="target_pct" value="{{ p.target_pct }}" min="0.1" max="500" step="0.1" dir="ltr" inputmode="decimal"></label>
+      <label>حس شما (اختیاری)
+        <select name="emotion">
+          <option value="">—</option>
+          {% for key, label in p.emotions.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+        </select>
+        <small class="muted">فقط یادداشت شخصی است؛ در تحلیل الگوها خوانده نمی‌شود.</small>
+      </label>
+    </div>
+    <div id="trade-quote" aria-live="polite"></div>
+    <div class="form-row">
+      <button type="button" class="btn btn-primary" hx-post="/fragments/trades/open"
+              hx-include="closest form, [data-clock='as_of_ts'], [data-trade-start]" hx-target="#trade-panel"
+              hx-disabled-elt="this">باز کردن معامله</button>
+    </div>
+    <div id="trade-msg" aria-live="polite"></div>
+  </form>
+{% endif %}

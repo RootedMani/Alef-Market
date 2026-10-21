@@ -1,9 +1,113 @@
 {% extends "base.html" %}
-{% from "_ui.html" import placeholder %}
+{% from "_ui.html" import placeholder, error_card %}
+{% from "_insight.html" import insight_card %}
+
+{% macro trade_row(t) %}
+<li class="row {{ 'open' if t.status == 'open' else ('win' if t.pnl > 0 else 'loss') }}" data-entry-ts="{{ t.entry_ts }}">
+  <span><bdi dir="ltr">{{ t.symbol }}</bdi>{% if t.origin == "paper" %} <span class="tag">تمرینی</span>{% endif %}</span>
+  <span>ورود <bdi dir="ltr">{{ t.entry_ts|date(tz) }} {{ t.entry_ts|clock(tz) }}</bdi></span>
+  {% if t.status == "open" %}
+  <span class="badge badge-live">باز</span>
+  {% else %}
+  <span>خروج <bdi dir="ltr">{{ t.exit_ts|clock(tz) }}</bdi> · {{ exit_fa[t.exit_reason] }}</span>
+  <bdi dir="ltr" class="pnl">{{ t.pnl|signed }} USDT</bdi>
+  {% endif %}
+</li>
+{% endmacro %}
 
 {% block content %}
+{% if failure %}
+<section class="card">{{ error_card(failure.error.message_fa) }}</section>
+{% elif not j.trades %}
 <section class="card">
-  {{ placeholder("ژورنال به‌زودی آماده می‌شود",
-                 "الگوهای تکراری معاملات، مثل ورود عجولانه بلافاصله بعد از ضرر، با درصد و تعداد نمونه اینجا نشان داده می‌شوند.") }}
+  {{ placeholder("هنوز معامله‌ای ثبت نشده است",
+                 "از صفحهٔ نمودار یک معاملهٔ تمرینی باز کنید تا اینجا دیده شود.", key="empty-journal") }}
 </section>
+{% else %}
+{% set s = j.stats %}
+<section class="card">
+  <h2>خلاصه</h2>
+  <dl class="stats">
+    <div><dt>معامله‌های بسته</dt><dd>{{ s.n_trades }}</dd></div>
+    <div><dt>درصد برد</dt><dd><bdi dir="ltr">{{ s.win_rate_pct|pct if s.win_rate_pct is not none else "—" }}</bdi></dd></div>
+    <div><dt>سود و زیان کل</dt><dd class="pnl {{ 'win' if s.total_pnl > 0 else 'loss' }}"><bdi dir="ltr">{{ s.total_pnl|signed }} USDT</bdi></dd></div>
+    <div><dt>سرمایهٔ فعلی</dt><dd><bdi dir="ltr">{{ s.equity|price }} USDT</bdi></dd></div>
+    <div><dt>میانگین سود</dt><dd><bdi dir="ltr">{{ s.avg_win|price if s.avg_win is not none else "—" }}</bdi></dd></div>
+    <div><dt>میانگین زیان</dt><dd><bdi dir="ltr">{{ s.avg_loss|price if s.avg_loss is not none else "—" }}</bdi></dd></div>
+    <div><dt>میانگین نتیجه (R)</dt><dd><bdi dir="ltr">{{ "%.2f"|format(s.expectancy_r) if s.expectancy_r is not none else "—" }}</bdi></dd></div>
+    <div><dt>نسبت سود به زیان</dt><dd><bdi dir="ltr">{{ "%.2f"|format(s.profit_factor) if s.profit_factor is not none else "—" }}</bdi></dd></div>
+  </dl>
+</section>
+
+<section class="card">
+  <h2>الگوهای تکرارشونده</h2>
+  {% for c in cards %}{{ insight_card(c) }}{% else %}
+  <p class="muted">هنوز الگویی با نمونهٔ کافی پیدا نشده است.</p>
+  {% endfor %}
+  {% if j.latest_review %}
+  <div class="review">
+    <h3>مرور آخرین معامله</h3>
+    <p id="review-text">{{ j.latest_review.narrative.text_fa|ltr }}</p>
+  </div>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>منحنی سرمایه</h2>
+  <div id="journal-chart" class="chart bt-chart" dir="ltr" data-equity-chart data-source="journal-data"></div>
+  <script type="application/json" id="journal-data">{{ equity_json|safe }}</script>
+  <p class="legend muted">زمان‌ها به وقت تهران</p>
+</section>
+
+<div class="panels">
+  <section class="card">
+    <h2>بر اساس ساعت ورود (تهران)</h2>
+    <ul class="bars">
+      {% for b in by_hour %}
+      <li><span class="bar-label"><bdi dir="ltr">{{ b.label }}</bdi></span>
+        <span class="bar"><span style="width: {{ b.width }}%"></span></span>
+        <span class="muted">{{ b.row.n_trades }} معامله · برد <bdi dir="ltr">{{ b.row.win_rate_pct|pct if b.row.win_rate_pct is not none else "—" }}</bdi></span></li>
+      {% endfor %}
+    </ul>
+  </section>
+  <section class="card">
+    <h2>بر اساس روز هفته</h2>
+    <ul class="bars">
+      {% for b in by_weekday %}
+      <li><span class="bar-label">{{ b.label }}</span>
+        <span class="bar"><span style="width: {{ b.width }}%"></span></span>
+        <span class="muted">{{ b.row.n_trades }} معامله · برد <bdi dir="ltr">{{ b.row.win_rate_pct|pct if b.row.win_rate_pct is not none else "—" }}</bdi></span></li>
+      {% endfor %}
+    </ul>
+  </section>
+</div>
+
+<section class="card">
+  <h2>معامله‌ها <span class="muted">(جدیدترین اول)</span></h2>
+  <ul class="rows trades">{% for t in j.trades[:trades_shown] %}{{ trade_row(t) }}{% endfor %}</ul>
+  {% if j.trades|length > trades_shown %}
+  <details>
+    <summary>همهٔ معامله‌ها (<bdi dir="ltr">{{ j.trades|length }}</bdi>)</summary>
+    <ul class="rows trades">{% for t in j.trades[trades_shown:] %}{{ trade_row(t) }}{% endfor %}</ul>
+  </details>
+  {% endif %}
+</section>
+
+{# One quiet re-fetch: LLM texts may replace the templates; only the words change. #}
+<div hx-get="/fragments/journal/texts" hx-trigger="load delay:3s" hx-swap="none" hidden></div>
+{% endif %}
+
+{% if can_reset %}
+<section class="card reset">
+  <button type="button" class="btn" hx-post="/fragments/demo/reset" hx-target="#reset-msg"
+          hx-confirm="همهٔ معامله‌های تمرینی پاک شود و ژورنال سارا به حالت اول برگردد؟">بازنشانی دمو</button>
+  <span class="muted small">معامله‌های تمرینی پاک می‌شوند و ژورنال سارا به حالت اول برمی‌گردد.</span>
+  <div id="reset-msg"></div>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='vendor/lightweight-charts-5.2.1.js') }}"></script>
+<script src="{{ url_for('static', path='js/chart.js') }}"></script>
 {% endblock %}

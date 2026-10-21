@@ -1,0 +1,18 @@
+{# One insight card exactly as the backend wrote it: title, text, the group's loss rate next
+   to the other trades, the sample size (always shown) and the evidence rows. `c` comes from
+   app.web.journal.card_ctx. The texts carry ids so the quiet re-fetch can swap the words. #}
+{% macro insight_card(c) %}
+{% set i = c.i %}
+<article class="insight{% if i.highlighted %} is-highlighted{% endif %}" data-key="{{ i.key }}">
+  {% if i.highlighted %}<p class="tag tag-on">معاملهٔ اخیر شما در همین گروه است</p>{% endif %}
+  <h3>{{ i.title_fa }}</h3>
+  <p class="insight-text" id="ins-text-{{ i.key }}">{{ i.text.text_fa|ltr }}</p>
+  {% if c.vs %}
+  <p class="vs"><span class="muted">نرخ زیان این گروه در برابر بقیهٔ معامله‌ها:</span> <strong>{{ c.vs }}</strong></p>
+  {% endif %}
+  <p class="sample">بر پایهٔ <strong>{{ i.sample_size }}</strong> معامله</p>
+  <ul class="evidence">
+    {% for label, value in c.evidence %}<li><span class="muted">{{ label }}</span> <bdi>{{ value }}</bdi></li>{% endfor %}
+  </ul>
+</article>
+{% endmacro %}

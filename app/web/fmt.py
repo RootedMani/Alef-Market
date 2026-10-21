@@ -35,6 +35,11 @@ def fmt_price(value: float) -> str:
     return f"{value:,.0f}" if value >= 10_000 else f"{value:,.2f}"
 
 
+def fmt_signed(value: float) -> str:
+    """``-1,538.13`` / ``+10.56``: a USDT amount with its sign and thousands separators."""
+    return f"{value:+,.2f}"
+
+
 def fmt_pct(value: float) -> str:
     return f"{value:.2f}%"
 

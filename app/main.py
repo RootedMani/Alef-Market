@@ -19,8 +19,10 @@ from app.logging_setup import setup_logging
 from app.settings import Settings, get_settings
 from app.web.backtest import router as backtest_router
 from app.web.chart import router as chart_router
+from app.web.journal import router as journal_router
 from app.web.pages import STATIC_DIR
 from app.web.pages import router as pages_router
+from app.web.trading import router as trading_router
 
 logger = logging.getLogger(__name__)
 
@@ -65,5 +67,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(pages_router)
     app.include_router(chart_router)
     app.include_router(backtest_router)
+    app.include_router(trading_router)
+    app.include_router(journal_router)
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app
