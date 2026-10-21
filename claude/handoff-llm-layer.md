@@ -5,7 +5,7 @@ Steps 1–3 of the LLM layer are built, tested and on `origin/main` (`47dbeb3`..
 **Read first:**
 - **Nothing calls the gateway yet.** `app.state.gateway` is built at startup and `GatewayDep` exists in `api/deps.py`, but no service uses `run_json`/`run_text`. Every user-visible text is still a template or a mock.
 - **`data/llm/pinned.jsonl` is empty.** The loader works and is tested, but no demo answer is pinned yet.
-- **The decisions below are not yet in §10 of the architecture doc.** §10 has no table for this chat. Copy them in when step 4 lands.
+- **The decisions below are not yet in §10 of the architecture doc.** §10 has no table for this chat. Copying them in is step 7.
 
 ## What's done and tested
 
@@ -13,12 +13,12 @@ Steps 1–3 of the LLM layer are built, tested and on `origin/main` (`47dbeb3`..
 |---|---|---|
 | `llm/providers.py` | `OpenAICompatProvider`: one httpx client per (provider, key) for Groq, Gemini and OpenRouter (A10). Maps HTTP status to `ProviderError.kind`: 429 → `rate_limited` (with `Retry-After`), 401/403 → `auth`, timeout → `timeout`, everything else → `http_error`. Error text is key-redacted and truncated. If a model rejects `response_format`, the call is retried once without it. `build_providers(settings)` | `test_llm_provider.py` (56) |
 | `llm/cache.py` | `cache_key` = sha256(prompt_id + canonical facts JSON: sorted keys, floats rounded to 9 decimals, −0.0 folded). `put_cached` is one atomic upsert that never touches a pinned row. `load_pinned` makes the DB's pinned set equal `data/llm/pinned.jsonl` | `test_llm_cache.py` (36), including a golden hash that locks the key across machines |
-| `llm/gateway.py` | `LLMGateway.run_json` / `run_text`: the ladder, deadlines, cache modes, `llm_calls` rows. Never raises | `test_llm_gateway.py` (66), driven by `tests/fakes.FakeProvider` and `FakeClock` |
+| `llm/gateway.py` | `LLMGateway.run_json` / `run_text`: the ladder, deadlines, cache modes, `llm_calls` rows. Never raises | `test_llm_gateway.py` (67), driven by `tests/fakes.FakeProvider` and `FakeClock` |
 | `llm/tasks.py` | Task registry: prompt version, output model, `deadline_s`, `max_tokens`, retry hint. All prompts are v2 | `test_llm_infra.py` (12): a prompt-hash test fails if a prompt file changes without a new version |
 | `llm/validate.py` | JSON: strip fences → parse → Pydantic (`extra="forbid"`). Prose: Persian, Latin digits, no advice words, every number grounded in the facts | `test_llm_validate.py` (11) |
 | `settings.py` | `llm_cache_mode`, `llm_timeout_s` (8 s), `llm_proxy`, `llm_provider_order`, `llm_task_providers`, `*_keys`, `*_model`, `proxy_for(client)` | `test_proxies.py`, `test_llm_gateway.py` (env parsing) |
 
-Counts include parametrized cases (181 LLM tests in all). `make check`: **569 passed**, 10 skipped, 8 deselected (live), Oct 21, 2026.
+Counts include parametrized cases (182 LLM tests in all). `make check`: **570 passed**, 10 skipped, 8 deselected (live), Oct 21, 2026.
 
 ## The ladder
 
@@ -90,7 +90,7 @@ The deadline bounds the whole ladder for one call. An answer that arrives after 
 | Requirement | Test |
 |---|---|
 | Parallel calls, no lost updates | `test_llm_gateway.py::test_many_parallel_calls_lose_no_updates`: 60 calls on 12 threads with a barrier, three FakeProviders, one key rate-limiting. Provider calls = attempts = usage counter sum = `llm_calls` rows |
-| Round-robin with the alias logged | `::test_round_robin_across_a_providers_keys` (6 calls → `groq#1,2,3,1,2,3`) and `::test_the_alias_that_answered_is_logged` (INFO line names `groq#2`). Two tests: the round-robin test checks `meta.provider`, not the log |
+| Round-robin with the alias logged | `::test_round_robin_logs_the_alias_of_each_rotating_call`: 6 calls, and the INFO lines name `groq#1,2,3,1,2,3` in order. Also `::test_round_robin_across_a_providers_keys` (`meta.provider`) |
 | Under 1 s left → fallback; `max_tokens` per task | `::test_less_than_a_second_left_goes_straight_to_the_fallback` (0.9 s left → second provider never called, `source=template`); `::test_task_settings_reach_the_provider` (parse and why send their own `max_tokens`); `::test_short_deadline_tasks`; `test_llm_provider.py::test_max_tokens_is_sent_when_given` |
 | User text delimited, "data, not instructions", injection | `::test_user_text_is_delimited_and_cannot_close_the_block`, `::test_comparisons_and_persian_stay_readable_in_the_user_message`, `::test_every_system_prompt_says_the_facts_are_data` (every task), `::test_an_injected_answer_that_breaks_the_schema_is_refused` |
 | Cache mode `only` + miss → no network, sockets disabled | `::test_only_mode_makes_no_network_attempt_with_sockets_disabled`: real providers from settings with two keys; `socket.socket.connect` and `socket.create_connection` raise |
@@ -112,13 +112,20 @@ The deadline bounds the whole ladder for one call. An answer that arrives after 
 - An eval set, `tests/evals/strategy_prompts.jsonl` (10 Persian + 10 English), run only with `pytest -m live`. `tests/evals/` is empty today.
 - Fix `app/api/mocks.py:251`, whose mock readback hardcodes `<`/`>` and breaks B12.
 
-**Still to wire after step 4.** The repo doesn't record how these are split into steps 5–7:
-- **`backtest_summary`.** Fill `BacktestResult.summary` in `services/backtest.py` from `result.metrics` (B11). `profit_factor`, `win_rate_pct` and `avg_r` can be None.
+**Step 5: journal texts and the backtest summary.**
 - **`insight` and `trade_review`.** Swap `services/journal.py::_insight_text` / `_review_text` for `gateway.run_text(…, fallback=<existing template>)`.
-- **`why` and `briefing`.** `templates.why_template` still raises `NotImplementedError("Week 3")`.
-- **Pin the demo answers** in `data/llm/pinned.jsonl` after reviewing them by hand.
-- **Run the Week 0 Persian quality test**, then set `*_model` and `ALEF_LLM_TASK_PROVIDERS` from it.
-- **Copy the decisions above into §10.**
+- **`backtest_summary`.** Fill `BacktestResult.summary` in `services/backtest.py` from `result.metrics` (B11). `profit_factor`, `win_rate_pct` and `avg_r` can be None.
+
+**Step 6: scripts and checks run on your machine.**
+- **`scripts/llm_probe`**: check each configured key and provider.
+- **`scripts/pin_demo_prompts`**: write the hand-reviewed demo answers to `data/llm/pinned.jsonl`.
+- **The live eval run** (`pytest -m live`).
+- **The offline boot test**: the app boots and serves pinned answers with no network.
+- **The Persian quality test**: then set `*_model` and `ALEF_LLM_TASK_PROVIDERS` from it.
+
+**Step 7: decisions and the final handoff.** Copy the decisions above into §10 of `docs/architecture-v1.md`, then write the final LLM handoff.
+
+**Not in this chain:** the `why` and `briefing` prose are wired in their own sessions. `templates.why_template` still raises `NotImplementedError("Week 3")`.
 
 ## Commands you run yourself
 
@@ -137,5 +144,5 @@ make reset-demo                              # rebuilds the DB and reloads data/
 
 ## State of the repo
 - `main` = `origin/main` at `267bf48`. Everything above is pushed.
-- `fix/llm-gateway-hardening` (`a6414ee`) has the same tree as `0ea952c` on main. It was squash-merged and can be deleted. The four older `fix/*` branches are untouched.
+- `fix/llm-gateway-hardening` (`a6414ee`, same tree as `0ea952c` on main) was deleted. The four older `fix/*` branches are untouched.
 - **Dependencies:** `uv sync` still fails on this machine, because `files.pythonhosted.org` times out. Use the hash-verified mirror install in `handoff-backtester.md` § State.

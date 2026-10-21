@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import socket
 import sqlite3
 import threading
@@ -351,6 +352,20 @@ def test_round_robin_across_a_providers_keys(factory: Any, clock: FakeClock) -> 
     gw = make_gw(factory, keys, clock)
     answered = [gw.run_text(WHY, WHY_FACTS, fallback=template).meta.provider for _ in range(6)]
     assert answered == ["groq#1", "groq#2", "groq#3", "groq#1", "groq#2", "groq#3"]
+
+
+def test_round_robin_logs_the_alias_of_each_rotating_call(
+    factory: Any, clock: FakeClock, caplog: pytest.LogCaptureFixture
+) -> None:
+    keys = [fake(f"groq#{i}", *([WHY_OUT] * 2)) for i in (1, 2, 3)]
+    gw = make_gw(factory, keys, clock)
+    with caplog.at_level(logging.INFO, logger="app.llm.gateway"):
+        for _ in range(6):
+            gw.run_text(WHY, WHY_FACTS, fallback=template)
+    logged = [
+        m.group(1) for r in caplog.records if (m := re.search(r"answered by (\S+)", r.getMessage()))
+    ]
+    assert logged == ["groq#1", "groq#2", "groq#3", "groq#1", "groq#2", "groq#3"]
 
 
 def test_usage_counters(factory: Any, clock: FakeClock) -> None:
