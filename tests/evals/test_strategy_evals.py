@@ -1,4 +1,4 @@
-"""Live eval: the 20 prompts of ``strategy_prompts.jsonl`` through the real providers.
+"""Live eval: the 20 prompts and 3 edits of ``strategy_prompts.jsonl`` on the real providers.
 
 Run by hand: ``uv run pytest -m live tests/evals -v``. Keys, models, provider order and
 ``ALEF_LLM_PROXY`` come from ``.env`` (the test suite strips ``ALEF_*`` from the shell, so the
@@ -19,21 +19,24 @@ from typing import Any
 
 import pytest
 
-from app.contracts.strategy import ParseRequest, Strategy
+from app.contracts.strategy import EditRequest, ParseRequest, Strategy
 from app.db.engine import create_schema, make_engine, make_session_factory
 from app.llm.gateway import LLMGateway, build_gateway
-from app.services.strategy import parse_strategy
+from app.services.strategy import edit_strategy, parse_strategy
 from app.settings import ROOT_DIR, Settings
 
 pytestmark = pytest.mark.live
 
-CASES: list[dict[str, Any]] = [
+ROWS: list[dict[str, Any]] = [
     json.loads(line)
     for line in (Path(__file__).parent / "strategy_prompts.jsonl")
     .read_text(encoding="utf-8")
     .splitlines()
     if line
 ]
+CASES = [r for r in ROWS if r.get("task", "parse") == "parse"]
+EDITS = [r for r in ROWS if r.get("task") == "edit"]
+BY_ID = {r["id"]: r for r in ROWS}
 
 
 @pytest.fixture(scope="module")
@@ -73,3 +76,18 @@ def test_strategy_prompt(gateway: LLMGateway, case: dict[str, Any]) -> None:
         expected = Strategy.model_validate(case["strategy"])
         got, want = (canonical(s.model_dump(mode="json")) for s in (out.strategy, expected))
         assert got == want
+
+
+@pytest.mark.parametrize("case", EDITS, ids=[c["id"] for c in EDITS])
+def test_strategy_edit(gateway: LLMGateway, case: dict[str, Any]) -> None:
+    """Applied to the base case's expected strategy; nothing unmentioned may disappear."""
+    base = Strategy.model_validate(BY_ID[case["base"]]["strategy"])
+    out = edit_strategy(gateway, EditRequest(strategy=base, text=case["text"]))
+    assert out.status != "offline", "no provider answered: check the keys and ALEF_LLM_PROXY"
+    assert out.status == case["status"], (out.message_fa, out.unsupported)
+    assert out.strategy is not None
+    want = Strategy.model_validate(case["strategy"])
+    assert canonical(out.strategy.model_dump(mode="json")) == canonical(
+        want.model_dump(mode="json")
+    )
+    assert out.changes_fa == case["changes"]

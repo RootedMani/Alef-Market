@@ -1,11 +1,12 @@
 """The 20-prompt eval set, checked without an LLM.
 
-``tests/evals/strategy_prompts.jsonl``: 10 Persian + 10 English cases with the expected status
-and, for "ok", the strategy as the model should write it (no defaults). The live run is
-``tests/evals/test_strategy_evals.py`` (``pytest -m live``). Here: the set is well formed, its
-expected answers pass the same checks a live answer must pass (number grounding and the
-indicator-name check, which was measured here before it was wired in), and Latin names alone
-would have refused 6 of the 14 ok cases.
+``tests/evals/strategy_prompts.jsonl``: 10 Persian + 10 English parse cases with the expected
+status and, for "ok", the strategy as the model should write it (no defaults); plus 3 edit cases
+(``"task": "edit"``, applied to the expected strategy of ``base``) with the expected changes.
+The live run is ``tests/evals/test_strategy_evals.py`` (``pytest -m live``). Here: the set is
+well formed, its expected answers pass the same checks a live answer must pass (number grounding
+and the indicator-name check, which was measured here before it was wired in), and Latin names
+alone would have refused 6 of the 14 ok cases.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from typing import Any
 
 import pytest
 
+from app.backtest.readback import strategy_changes_fa
 from app.contracts.strategy import IndicatorRef, Strategy
 from app.llm.normalize import detect_lang, normalize_text
 from app.llm.strategy_checks import bare_moving_average, named_indicators
@@ -24,10 +26,13 @@ from app.llm.tasks import TASKS
 from app.llm.validate import validate_output
 
 EVAL_FILE = Path(__file__).parents[1] / "evals" / "strategy_prompts.jsonl"
-CASES: list[dict[str, Any]] = [
+ROWS: list[dict[str, Any]] = [
     json.loads(line) for line in EVAL_FILE.read_text(encoding="utf-8").splitlines() if line
 ]
+CASES = [r for r in ROWS if r.get("task", "parse") == "parse"]
+EDITS = [r for r in ROWS if r.get("task") == "edit"]
 OK = [c for c in CASES if c["status"] == "ok"]
+BY_ID = {r["id"]: r for r in ROWS}
 
 
 def ids(cases: list[dict[str, Any]]) -> list[str]:
@@ -58,6 +63,31 @@ def test_the_set_is_10_persian_and_10_english_with_refusals_in_both() -> None:
         statuses = {c["status"] for c in CASES if c["lang"] == lang}
         assert statuses == {"ok", "unsupported", "unclear"}
     assert sorted(c["demo"] for c in CASES if "demo" in c) == [1, 2, 3]
+
+
+def test_three_edit_cases_on_parse_cases() -> None:
+    """The demo edit, a number change, and a removal that must keep the other exits."""
+    assert ids(EDITS) == ["edit-01", "edit-02", "edit-03"]
+    assert EDITS[0]["base"] == "fa-01" and EDITS[0]["text"] == "حد ضرر رو 3 درصد کن"
+    assert all(BY_ID[e["base"]]["status"] == "ok" for e in EDITS)
+
+
+@pytest.mark.parametrize("case", EDITS, ids=ids(EDITS))
+def test_an_expected_edit_passes_the_live_checks_and_says_what_changed(
+    case: dict[str, Any],
+) -> None:
+    base = Strategy.model_validate(BY_ID[case["base"]]["strategy"])
+    facts = {"strategy": base.model_dump(mode="json"), "instruction": normalize_text(case["text"])}
+    raw = json.dumps({"status": "ok", "strategy": case["strategy"], "unsupported": []})
+    new = validate_output(TASKS["strategy_edit"], raw, facts).strategy  # type: ignore[union-attr]
+    assert new is not None
+    assert strategy_changes_fa(base, new) == case["changes"] != []
+
+
+def test_the_removal_edit_keeps_the_stop_and_names_the_removal() -> None:
+    edit = BY_ID["edit-03"]
+    assert edit["strategy"]["exits"] == {"stop_loss_pct": 2}
+    assert edit["changes"] == ["حد سود حذف شد"]
 
 
 @pytest.mark.parametrize("case", CASES, ids=ids(CASES))
