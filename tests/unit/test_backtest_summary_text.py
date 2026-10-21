@@ -6,11 +6,11 @@ from typing import Any
 
 import pytest
 
-from app.contracts.backtest import BacktestMetrics
+from app.contracts.backtest import SMALL_SAMPLE_TRADES, BacktestMetrics
 from app.llm.tasks import TASKS
 from app.llm.templates import backtest_summary_template
 from app.llm.validate import validate_output
-from app.services.backtest import SMALL_SAMPLE_TRADES, summary_facts
+from app.services.backtest import summary_facts
 
 BASE: dict[str, Any] = {
     "total_return_pct": -1.6432,

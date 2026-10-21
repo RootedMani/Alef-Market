@@ -9,6 +9,10 @@ from pydantic import Field, model_validator
 from app.contracts.common import Contract, Narrative, Pct, Symbol, Timeframe, TimestampMs
 from app.contracts.strategy import Strategy
 
+# Fewer trades than this is a small sample: the summary's ``small_sample`` flag and the
+# page's warning both read this one constant (the summary text never shows the number).
+SMALL_SAMPLE_TRADES = 20
+
 ExitReason = Literal["stop", "target", "time", "signal", "manual", "end_of_data"]
 
 

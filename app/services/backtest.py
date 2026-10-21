@@ -24,7 +24,12 @@ from app.backtest.engine import NotEnoughBars
 from app.backtest.engine import run_backtest as run_engine
 from app.backtest.readback import strategy_to_persian
 from app.backtest.rules import strategy_warmup
-from app.contracts.backtest import BacktestMetrics, BacktestRequest, BacktestResult
+from app.contracts.backtest import (
+    SMALL_SAMPLE_TRADES,
+    BacktestMetrics,
+    BacktestRequest,
+    BacktestResult,
+)
 from app.contracts.common import TIMEFRAME_MS, Narrative, TextMeta
 from app.data import store
 from app.db.tables import BacktestRunRow
@@ -70,10 +75,6 @@ def resolve_range(db: Session, settings: Settings, req: BacktestRequest) -> tupl
             f"بازهٔ بک‌تست حداکثر {MAX_DAYS} روز است.",
         )
     return start, end
-
-
-# Fewer trades than this and the summary says the sample is small (the text never shows it).
-SMALL_SAMPLE_TRADES = 20
 
 
 def summary_facts(metrics: BacktestMetrics) -> dict[str, Any]:

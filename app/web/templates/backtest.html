@@ -1,9 +1,40 @@
 {% extends "base.html" %}
-{% from "_ui.html" import placeholder %}
 
 {% block content %}
 <section class="card">
-  {{ placeholder("سنجش ایده به‌زودی آماده می‌شود",
-                 "ایده را به فارسی یا انگلیسی می‌نویسید، برنامه برداشت خودش را نشان می‌دهد و نتیجه را روی داده‌های گذشته می‌بینید.") }}
+  <form id="bt-form" hx-post="/fragments/backtest/parse" hx-target="#bt-result" hx-swap="innerHTML"
+        hx-indicator="#bt-loading" hx-disabled-elt="find button">
+    <input type="hidden" name="symbol" value="{{ symbol }}">
+    <label for="bt-text" class="field-label">ایده‌تان را بنویسید (فارسی یا انگلیسی)</label>
+    <textarea id="bt-text" name="text" dir="auto" rows="3" minlength="3" maxlength="1000" required
+              placeholder="مثلاً: وقتی RSI زیر 30 رفت وارد شو، حد ضرر 2 درصد"></textarea>
+    <div class="chips" role="group" aria-label="نمونه‌ها">
+      <span class="muted">نمونه‌ها:</span>
+      {% for prompt in prompts %}
+      <button type="submit" class="chip" data-text="{{ prompt }}"
+              onclick="this.form.elements.text.value = this.dataset.text">{{ prompt }}</button>
+      {% endfor %}
+    </div>
+    <div class="form-row">
+      <button type="submit" class="btn btn-primary">بررسی ایده</button>
+      <span id="bt-loading" class="htmx-indicator loading" role="status">در حال فهمیدن متن… ممکن است چند ثانیه طول بکشد.</span>
+    </div>
+    <p class="muted small">
+      {% if run.start_ts is not none %}
+      آزمون روی کندل‌های 5 دقیقه‌ای <bdi dir="ltr">{{ run.symbol }}</bdi> در {{ backtest_days }} روز پیش از روز نمایش
+      (<bdi dir="ltr">{{ run.start_ts|date(tz) }}</bdi> تا <bdi dir="ltr">{{ run.end_ts|date(tz) }}</bdi>) انجام می‌شود.
+      {% else %}
+      آزمون روی کندل‌های 5 دقیقه‌ای ذخیره‌شدهٔ <bdi dir="ltr">{{ run.symbol }}</bdi> انجام می‌شود.
+      {% endif %}
+      کارمزد و لغزش قیمت حساب می‌شود.
+    </p>
+  </form>
 </section>
+
+<div id="bt-result" aria-live="polite"></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='vendor/lightweight-charts-5.2.1.js') }}"></script>
+<script src="{{ url_for('static', path='js/chart.js') }}"></script>
 {% endblock %}

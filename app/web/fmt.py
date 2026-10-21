@@ -5,8 +5,11 @@ Latin digits everywhere. Registered as Jinja filters in ``app.web.pages``.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
+
+from markupsafe import Markup, escape
 
 
 def _local(ts: int, tz_name: str) -> datetime:
@@ -34,3 +37,19 @@ def fmt_price(value: float) -> str:
 
 def fmt_pct(value: float) -> str:
     return f"{value:.2f}%"
+
+
+# Latin runs inside Persian text (RSI(14), EMA 200, BTC/USDT): kept LTR so bidi can't scramble.
+_LATIN_RUN = re.compile(r"[A-Za-z][A-Za-z0-9_/]*(?:\(\d+\))?(?: \d+(?:\.\d+)?)?")
+
+
+def ltr_runs(text: str | None) -> Markup:
+    """Escape ``text`` and wrap each Latin run in ``<bdi dir="ltr">``."""
+    out: list[str] = []
+    last = 0
+    for m in _LATIN_RUN.finditer(text or ""):
+        out.append(str(escape(text[last : m.start()])))  # type: ignore[index]
+        out.append(f'<bdi dir="ltr">{escape(m.group(0))}</bdi>')
+        last = m.end()
+    out.append(str(escape((text or "")[last:])))
+    return Markup("".join(out))

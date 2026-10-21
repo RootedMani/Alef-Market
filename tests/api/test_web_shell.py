@@ -26,11 +26,13 @@ COMMANDS = re.compile(
 # The app's own labels (app/web: Python, templates, JS, CSS) say «ورود»/«خروج»: no buy/sell
 # words at all. Backend texts: tests/unit/test_buy_sell_wording.py.
 FORBIDDEN_FA = ("بخر", "بفروش", "خرید", "فروش")
-FORBIDDEN_EN = re.compile(r"\b(buy|sell)", re.IGNORECASE)
+# whole words (buy-and-hold, buying, sellers), not identifiers like buy_hold_return_pct
+FORBIDDEN_EN = re.compile(r"\b(buy|sell)(?:s|ing|ers?)?\b", re.IGNORECASE)
 
 
 def without_user_text(text: str) -> str:
     """The page minus the demo prompts (example text the user types, not an app label)."""
+    text = re.sub(r"</?bdi[^>]*>", "", text)  # Latin runs are wrapped for bidi, not changed
     for prompt in DEMO_PROMPTS:
         text = text.replace(prompt, "").replace(html.escape(prompt), "")
     return text
