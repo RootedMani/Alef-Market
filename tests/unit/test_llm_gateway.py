@@ -749,3 +749,76 @@ def test_only_mode_makes_no_network_attempt_with_sockets_disabled(
     s = make_settings(tmp_path, groq_keys="g1", gemini_keys="m1", llm_cache_mode="only")
     out = build_gateway(s, factory).run_json(PARSE, PARSE_FACTS, fallback=unclear)
     assert out.value.status == "unclear" and out.attempts == []
+
+
+# ---------- per-call cache mode and the background fill (journal texts) ----------
+
+
+def test_a_per_call_only_mode_never_calls_on_a_miss(factory: Any, clock: FakeClock) -> None:
+    p = fake("groq#1", WHY_OUT)
+    out = make_gw(factory, [p], clock).run_text(WHY, WHY_FACTS, fallback=template, mode="only")
+    assert out.meta.source == "template" and p.calls == []
+
+
+def test_a_per_call_prefer_mode_serves_the_cache_instantly(factory: Any, clock: FakeClock) -> None:
+    seed_cache(factory, WHY, WHY_FACTS, WHY_OUT)
+    p = fake("groq#1", WHY_OUT)
+    gw = make_gw(factory, [p], clock, mode="fallback")
+    out = gw.run_text(WHY, WHY_FACTS, fallback=template, mode="prefer")
+    assert out.meta.source == "cache" and p.calls == []
+
+
+def test_global_only_mode_wins_over_a_per_call_mode(factory: Any, clock: FakeClock) -> None:
+    p = fake("groq#1", WHY_OUT)
+    gw = make_gw(factory, [p], clock, mode="only")
+    assert gw.run_text(WHY, WHY_FACTS, fallback=template, mode="prefer").meta.source == "template"
+    assert gw.fill(WHY, WHY_FACTS, fallback=template) is True
+    assert p.calls == []
+
+
+def test_fill_stores_an_answer_then_serves_it_from_the_cache(
+    factory: Any, clock: FakeClock
+) -> None:
+    p = fake("groq#1", WHY_OUT, WHY_OUT)
+    gw = make_gw(factory, [p], clock)
+    assert gw.fill(WHY, WHY_FACTS, fallback=template) is True
+    assert gw.fill(WHY, WHY_FACTS, fallback=template) is True  # prefer: a cache hit
+    assert len(p.calls) == 1
+    assert gw.run_text(WHY, WHY_FACTS, fallback=template, mode="only").meta.source == "cache"
+
+
+class BlockingProvider:
+    """Answers only after ``release`` is set, so a fill can be caught in flight."""
+
+    alias, provider = "groq#1", "groq"
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.calls: list[str] = []
+        self._lock = threading.Lock()
+
+    def complete(self, system: str, user: str, **_: Any) -> str:
+        with self._lock:
+            self.calls.append(user)
+        self.started.set()
+        assert self.release.wait(timeout=10), "never released"
+        return self.text
+
+
+def test_a_text_already_in_flight_is_not_filled_twice(factory: Any) -> None:
+    p = BlockingProvider(WHY_OUT)
+    gw = LLMGateway([p], session_factory=factory, cache_mode="fallback")  # type: ignore[list-item]
+    first = threading.Thread(target=gw.fill, args=(WHY, WHY_FACTS), kwargs={"fallback": template})
+    first.start()
+    try:
+        assert p.started.wait(timeout=10)
+        assert gw.fill(WHY, WHY_FACTS, fallback=template) is False  # in flight: skipped
+    finally:
+        p.release.set()
+        first.join(timeout=10)
+    assert not first.is_alive()
+    assert len(p.calls) == 1
+    assert gw.fill(WHY, WHY_FACTS, fallback=template) is True  # released: a cache hit now
+    assert len(p.calls) == 1

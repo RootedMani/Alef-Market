@@ -21,6 +21,10 @@
     cached (fallback mode)   -> return cached                                  (source=cache)
     else                     -> return fallback()                              (source=template)
 
+A call may override the cache mode (``mode=``), except that a global "only" always wins: the
+journal reads texts with "only" during a request and ``fill``s misses afterwards with "prefer"
+(one fill per cache key at a time); the backtest summary uses "prefer".
+
 One gateway lives per process (``app.state.gateway``) and is called from FastAPI's thread
 pool, so key/provider state and the usage counters sit behind one lock. Every attempt becomes
 an ``llm_calls`` row (key alias, outcome, latency), written in the gateway's own short session
@@ -143,20 +147,57 @@ class LLMGateway:
         self._provider_until: dict[str, float] = {}  # provider -> clock time its cooldown ends
         self._next_key: dict[str, int] = {}  # provider -> round-robin counter
         self._usage: Counter[tuple[str, str]] = Counter()
+        self._in_flight: set[str] = set()  # cache keys being filled in the background
 
     # ---------- public ----------
 
     def run_json[M: BaseModel](
-        self, task: PromptTask, facts: Facts, *, fallback: Callable[[], M]
+        self,
+        task: PromptTask,
+        facts: Facts,
+        *,
+        fallback: Callable[[], M],
+        mode: CacheMode | None = None,
     ) -> LLMOutcome[M]:
-        """Run a JSON task; ``fallback`` builds the refusal value. Never raises."""
-        return cast(LLMOutcome[M], self._run(task, facts, fallback))
+        """Run a JSON task; ``fallback`` builds the refusal value. Never raises.
+
+        ``mode`` overrides the cache mode for this call, except that a global "only" always
+        wins (an offline rehearsal never touches the network).
+        """
+        return cast(LLMOutcome[M], self._run(task, facts, fallback, mode))
 
     def run_text(
-        self, task: PromptTask, facts: Facts, *, fallback: Callable[[], str]
+        self,
+        task: PromptTask,
+        facts: Facts,
+        *,
+        fallback: Callable[[], str],
+        mode: CacheMode | None = None,
     ) -> LLMOutcome[str]:
         """Run a prose task; ``fallback`` renders the Persian template. Never raises."""
-        return cast(LLMOutcome[str], self._run(task, facts, fallback))
+        return cast(LLMOutcome[str], self._run(task, facts, fallback, mode))
+
+    def fill(self, task: PromptTask, facts: Facts, *, fallback: Callable[[], Any]) -> bool:
+        """Get a cached answer for these facts, calling the LLM only on a miss ("prefer").
+
+        For background work after a response (journal texts). A text already being filled by
+        another thread is skipped: returns False. Never raises.
+        """
+        try:
+            key = cache_key(task.prompt_id, facts)
+        except Exception:
+            logger.exception("llm %s: facts can't be keyed; nothing to fill", task.prompt_id)
+            return False
+        with self._lock:
+            if key in self._in_flight:
+                return False
+            self._in_flight.add(key)
+        try:
+            self._run(task, facts, fallback, "prefer")
+        finally:
+            with self._lock:
+                self._in_flight.discard(key)
+        return True
 
     def order_for(self, task: PromptTask) -> list[LLMProvider]:
         """Every key in the order this task tries them (before round-robin rotation)."""
@@ -174,22 +215,29 @@ class LLMGateway:
 
     # ---------- the ladder ----------
 
-    def _run(self, task: PromptTask, facts: Facts, fallback: Callable[[], Any]) -> LLMOutcome[Any]:
+    def _run(
+        self,
+        task: PromptTask,
+        facts: Facts,
+        fallback: Callable[[], Any],
+        mode: CacheMode | None = None,
+    ) -> LLMOutcome[Any]:
+        mode = "only" if self.cache_mode == "only" else (mode or self.cache_mode)
         try:
-            return self._ladder(task, facts, fallback)
+            return self._ladder(task, facts, fallback, mode)
         except Exception:
             logger.exception("llm %s: gateway error; using the template", task.prompt_id)
             return self._template(task, fallback, [])
 
     def _ladder(
-        self, task: PromptTask, facts: Facts, fallback: Callable[[], Any]
+        self, task: PromptTask, facts: Facts, fallback: Callable[[], Any], mode: CacheMode
     ) -> LLMOutcome[Any]:
         deadline = self._clock() + task.deadline_s
         key = cache_key(task.prompt_id, facts)
         cached = self._read_cache(task, key, facts)
-        if cached is not None and (cached[1].pinned or self.cache_mode in ("prefer", "only")):
+        if cached is not None and (cached[1].pinned or mode in ("prefer", "only")):
             return self._from_cache(task, cached, [])
-        if self.cache_mode == "only":
+        if mode == "only":
             return self._template(task, fallback, [])
 
         attempts: list[Attempt] = []
