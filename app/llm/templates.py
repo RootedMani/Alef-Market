@@ -7,6 +7,8 @@ week its feature is built.
 
 from __future__ import annotations
 
+from typing import Any
+
 from app.contracts.analysis import WhyFacts
 from app.contracts.journal import InsightFacts, TradeReviewFacts
 from app.journal.insights import TITLES_FA
@@ -168,3 +170,33 @@ STRATEGY_NO_CHANGE_FA = (
     "این دستور چیزی را در استراتژی تغییر نداد. بنویسید چه چیزی عوض شود، "
     f"مثلاً «حد ضرر رو 3 درصد کن» یا «حد سود 5 درصد بذار». {SUPPORTED_FA}"
 )
+
+
+# ---------- backtest summary (LLM step 5) ----------
+
+
+def _pct2(x: float) -> str:
+    return f"{x:.2f}"
+
+
+def backtest_summary_template(facts: dict[str, Any]) -> str:
+    """Two or three sentences from the metrics; no threshold number, no advice, no cause.
+
+    ``facts`` = ``services.backtest.summary_facts``: the metrics plus ``small_sample``.
+    """
+    n = facts["n_trades"]
+    hold = _pct2(facts["buy_hold_return_pct"])
+    if n == 0:
+        text = f"در این بازه هیچ معامله‌ای انجام نشد؛ خرید و نگه‌داری {hold}% بازده داشت."
+    else:
+        text = (
+            f"بازده این استراتژی {_pct2(facts['total_return_pct'])}% بود و خرید و نگه‌داری "
+            f"در همین بازه {hold}%. بیشترین افت سرمایه {_pct2(facts['max_drawdown_pct'])}% "
+            f"و تعداد معامله‌ها {n} بود"
+        )
+        if facts.get("win_rate_pct") is not None:
+            text += f"، با نرخ برد {_pct2(facts['win_rate_pct'])}%"
+        text += "."
+    if facts.get("small_sample") and n > 0:
+        text += " تعداد معامله‌ها کم است؛ این نتیجه را با احتیاط بخوانید."
+    return text + " نتیجه‌های گذشته تضمینی برای آینده نیست."

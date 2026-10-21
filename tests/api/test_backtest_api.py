@@ -17,6 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from app.api.deps import get_gateway
 from app.backtest.engine import run_backtest
 from app.backtest.readback import strategy_to_persian
 from app.contracts.backtest import BacktestRequest, BacktestResult
@@ -25,12 +26,18 @@ from app.data.resample import resample
 from app.data.store import upsert_candles
 from app.data.synthetic import synthetic_1m
 from app.db.engine import create_schema, make_engine, make_session_factory, session_scope
-from app.db.tables import BacktestRunRow
+from app.db.tables import BacktestRunRow, LLMCacheRow
+from app.llm.cache import cache_key, canonical_json
+from app.llm.gateway import LLMGateway
+from app.llm.tasks import TASKS
+from app.llm.templates import backtest_summary_template
+from app.llm.validate import validate_output
 from app.main import create_app
 from app.services import market as market_service
+from app.services.backtest import summary_facts
 from app.services.demo import ensure_demo_user
 from tests.conftest import make_settings
-from tests.fakes import FakeExchange
+from tests.fakes import FakeClock, FakeExchange, FakeProvider
 
 M = 60_000
 STEP = 5 * M
@@ -108,7 +115,7 @@ def test_run_on_replay_returns_a_contract_valid_result(
     assert result.warmup_bars == WARMUP
     assert result.bars == DAYS * 288 - WARMUP
     assert result.metrics.n_trades > 0
-    assert result.summary is None
+    assert result.summary is not None and result.summary.meta.source == "template"  # no keys
     # the request is echoed with the range actually tested
     assert result.request.start_ts == T0 + WARMUP * STEP
     assert result.request.end_ts == T0 + DAYS * DAY
@@ -212,3 +219,85 @@ def test_live_mode_falls_back_to_the_cache(
         result = _run(c)
     assert result.bars == DAYS * 288 - WARMUP
     assert fake.calls, "live mode must try the exchange first"
+
+
+# ---------- the summary: inline, 2 s deadline, cache first, template fallback ----------
+
+
+def _use(api: TestClient, *script: str | Exception, latency_s: float = 0.0) -> FakeProvider:
+    clock = FakeClock()
+    p = FakeProvider("groq#1", list(script), clock=clock, latency_s=latency_s)
+    gw = LLMGateway(
+        [p],
+        session_factory=make_session_factory(api.app.state.llm_engine),  # type: ignore[attr-defined]
+        cache_mode="fallback",
+        clock=clock,
+    )
+    api.app.dependency_overrides[get_gateway] = lambda: gw  # type: ignore[attr-defined]
+    return p
+
+
+def _grounded_summary(result: BacktestResult) -> str:
+    m = result.metrics
+    return f"بازده این استراتژی {m.total_return_pct:.2f}% و تعداد معامله‌ها {m.n_trades} بود."
+
+
+def test_the_summary_template_without_keys_is_grounded(api: TestClient) -> None:
+    result = _run(api)
+    assert result.summary is not None
+    facts = summary_facts(result.metrics)
+    assert result.summary.text_fa == backtest_summary_template(facts)
+    assert validate_output(TASKS["backtest_summary"], result.summary.text_fa, facts)
+    assert result.summary.meta.prompt == TASKS["backtest_summary"].prompt_id
+
+
+def test_an_llm_summary_is_cached_and_the_rerun_is_instant(api: TestClient) -> None:
+    """Global "fallback" mode, yet the second identical run makes no call: the summary is
+    read cache-first, and it was written before the run's DB flush took the write lock."""
+    template_run = _run(api)
+    p = _use(api, _grounded_summary(template_run))
+    first = _run(api)
+    assert first.summary is not None and first.summary.meta.source == "llm"
+    assert first.summary.text_fa == _grounded_summary(template_run)
+    second = _run(api)
+    assert second.summary is not None and second.summary.meta.source == "cache"
+    assert len(p.calls) == 1
+
+
+def test_a_pinned_summary_is_served_without_a_call(api: TestClient) -> None:
+    result = _run(api)
+    facts = summary_facts(result.metrics)
+    with api.app.state.session_factory() as db:  # type: ignore[attr-defined]
+        db.add(
+            LLMCacheRow(
+                key=cache_key(TASKS["backtest_summary"].prompt_id, facts),
+                task=TASKS["backtest_summary"].prompt_id,
+                input_json=canonical_json(facts),
+                output_text=_grounded_summary(result),
+                provider="pinned",
+                created_ts=0,
+                pinned=True,
+            )
+        )
+        db.commit()
+    p = _use(api, "timeout")
+    out = _run(api)
+    assert out.summary is not None and out.summary.meta.provider == "pinned" and p.calls == []
+
+
+def test_a_down_provider_or_an_ungrounded_answer_gives_the_template(api: TestClient) -> None:
+    _use(api, "timeout")
+    assert _run(api).summary.meta.source == "template"  # type: ignore[union-attr]
+    p = _use(api, "بازده 99.99% بود.", "بازده 99.99% بود.")
+    out = _run(api)
+    assert out.summary is not None and out.summary.meta.source == "template"
+    assert len(p.calls) == 2  # one retry, then the template
+
+
+def test_the_summary_waits_at_most_2_seconds(api: TestClient) -> None:
+    """The first attempt gets the whole 2 s; a slow bad answer leaves < 1 s: no retry."""
+    p = _use(api, "بازده 99.99% بود.", "unused", latency_s=1.5)
+    out = _run(api)
+    assert p.requests[0]["timeout_s"] == 2
+    assert len(p.calls) == 1 and out.summary is not None
+    assert out.summary.meta.source == "template"

@@ -16,6 +16,7 @@ Range rules (B7, B15, B16):
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -23,10 +24,13 @@ from app.backtest.engine import NotEnoughBars
 from app.backtest.engine import run_backtest as run_engine
 from app.backtest.readback import strategy_to_persian
 from app.backtest.rules import strategy_warmup
-from app.contracts.backtest import BacktestRequest, BacktestResult
-from app.contracts.common import TIMEFRAME_MS
+from app.contracts.backtest import BacktestMetrics, BacktestRequest, BacktestResult
+from app.contracts.common import TIMEFRAME_MS, Narrative, TextMeta
 from app.data import store
 from app.db.tables import BacktestRunRow
+from app.llm.gateway import LLMGateway
+from app.llm.tasks import TASKS
+from app.llm.templates import backtest_summary_template
 from app.services import market
 from app.services.errors import InvalidRequest
 from app.settings import Settings
@@ -68,8 +72,37 @@ def resolve_range(db: Session, settings: Settings, req: BacktestRequest) -> tupl
     return start, end
 
 
+# Fewer trades than this and the summary says the sample is small (the text never shows it).
+SMALL_SAMPLE_TRADES = 20
+
+
+def summary_facts(metrics: BacktestMetrics) -> dict[str, Any]:
+    """The summary's facts: the metrics plus code's ``small_sample`` decision."""
+    return {
+        **metrics.model_dump(mode="json"),
+        "small_sample": metrics.n_trades < SMALL_SAMPLE_TRADES,
+    }
+
+
+def summarize(metrics: BacktestMetrics, gateway: LLMGateway | None) -> Narrative:
+    """Cache first ("prefer": a cached or pinned summary returns at once), then the LLM within
+    the task's 2 s deadline, then the template. Never raises."""
+    facts = summary_facts(metrics)
+    task = TASKS["backtest_summary"]
+    template = backtest_summary_template(facts)
+    if gateway is None:
+        return Narrative(text_fa=template, meta=TextMeta(source="template", prompt=task.prompt_id))
+    out = gateway.run_text(task, facts, fallback=lambda: template, mode="prefer")
+    return Narrative(text_fa=out.value, meta=out.meta)
+
+
 def run_backtest(
-    db: Session, settings: Settings, req: BacktestRequest, *, user_id: int
+    db: Session,
+    settings: Settings,
+    req: BacktestRequest,
+    *,
+    user_id: int,
+    gateway: LLMGateway | None = None,
 ) -> BacktestResult:
     """Run a validated strategy over stored/live candles and save it to ``backtest_runs``."""
     start, end = resolve_range(db, settings, req)
@@ -90,7 +123,10 @@ def run_backtest(
 
     tested = result.equity
     resolved = req.model_copy(update={"start_ts": tested[0].ts, "end_ts": tested[-1].ts + step})
-    result = result.model_copy(update={"request": resolved})
+    # Before the run's own flush: after it the request session holds SQLite's write lock and
+    # the gateway's cache write would give up (200 ms), so the summary would never be cached.
+    summary = summarize(result.metrics, gateway)
+    result = result.model_copy(update={"request": resolved, "summary": summary})
 
     row = BacktestRunRow(
         user_id=user_id,

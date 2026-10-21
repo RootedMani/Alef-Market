@@ -37,9 +37,14 @@ def edit_strategy(gateway: LLMGateway, req: EditRequest) -> ParseResult:
 
 
 def run_backtest(
-    db: Session, settings: Settings, req: BacktestRequest, *, user_id: int
+    db: Session,
+    settings: Settings,
+    req: BacktestRequest,
+    *,
+    user_id: int,
+    gateway: LLMGateway | None = None,
 ) -> BacktestResult:
-    return backtest.run_backtest(db, settings, req, user_id=user_id)
+    return backtest.run_backtest(db, settings, req, user_id=user_id, gateway=gateway)
 
 
 def open_trade(

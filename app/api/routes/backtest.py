@@ -34,7 +34,10 @@ def edit(
 
 
 @router.post("/run", response_model=BacktestResult)
-def run(req: BacktestRequest, settings: SettingsDep, db: DbDep, user: UserDep) -> BacktestResult:
+def run(
+    req: BacktestRequest, settings: SettingsDep, db: DbDep, user: UserDep, gateway: GatewayDep
+) -> BacktestResult:
+    """Includes ``summary``: cached/pinned at once, else the LLM within 2 s, else a template."""
     if settings.mock_api:
         return mocks.backtest_result(req)
-    return features.run_backtest(db, settings, req, user_id=user.id)
+    return features.run_backtest(db, settings, req, user_id=user.id, gateway=gateway)
