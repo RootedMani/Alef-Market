@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.backtest.sizing import size_position
 from app.contracts.backtest import Costs
-from app.contracts.common import TimestampMs
+from app.contracts.common import Symbol, TimestampMs
 from app.contracts.journal import OpenTradeRequest, SizeQuote, SizeRequest, TradeRecord
 from app.data.base import MarketDataSource, SourceError
 from app.data.ccxt_source import CcxtSource
@@ -78,7 +78,7 @@ def quote_trade(
     user_id: int,
 ) -> TradeQuote:
     as_of = _as_of(settings, as_of_ts)
-    entry = _price(_source(db, settings), symbol, as_of) * (1 + COSTS.slippage_pct / 100)
+    entry = _entry_close(_source(db, settings), symbol, as_of) * (1 + COSTS.slippage_pct / 100)
     equity = equity_now(db, user_id)
     req = SizeRequest(entry_price=entry, stop_pct=stop_pct, risk_pct=risk_pct, equity=equity)
     return TradeQuote(entry, equity, size_quote(req))
@@ -103,17 +103,35 @@ def _save(db: Session, rec: TradeRecord) -> TradeRecord:
     return rec
 
 
+def _entry_close(src: MarketDataSource, symbol: Symbol, as_of_ts: int) -> float:
+    """The price a trade opened now fills at (before slippage), for the quote and the open.
+
+    Replay refuses a time past the recorded data: ``latest_price`` would still answer with
+    the last recorded close however old, and the trade would never settle.
+    """
+    if isinstance(src, ReplaySource) and not src.has_bar_closing_at(symbol, as_of_ts):
+        raise InvalidRequest(
+            f"no {symbol} replay bar closed at ts={as_of_ts}: past the recorded data",
+            "این زمان خارج از داده‌های ضبط‌شده است؛ در این لحظه معامله‌ای باز نمی‌شود.",
+        )
+    return _price(src, symbol, as_of_ts)
+
+
 def open_trade(
     db: Session, settings: Settings, req: OpenTradeRequest, *, user_id: int
 ) -> TradeRecord:
-    """Buy at the last closed 1m close at ``as_of_ts``; size from stop % and risk % of equity."""
+    """Buy at the price at ``as_of_ts`` (replay: last closed 1m close; live: the live price).
+
+    Size from stop % and risk % of equity.
+    """
     as_of = _as_of(settings, req.as_of_ts)
     src = _source(db, settings)
+    last_close = _entry_close(src, req.symbol, as_of)
     rec = paper.open_position(
         user_id=user_id,
         symbol=req.symbol,
         as_of_ts=as_of,
-        last_close=_price(src, req.symbol, as_of),
+        last_close=last_close,
         equity=equity_now(db, user_id),
         stop_pct=req.stop_pct,
         target_pct=req.target_pct,
@@ -131,7 +149,7 @@ def open_trade(
     return rec.model_copy(update={"id": row.id})
 
 
-def _settle(src: MarketDataSource, rec: TradeRecord, as_of: int) -> TradeRecord:
+def _settle(settings: Settings, src: MarketDataSource, rec: TradeRecord, as_of: int) -> TradeRecord:
     if rec.status != "open" or as_of <= rec.entry_ts:
         return rec
     since = paper.first_bar_ts(rec) - 1  # candles_since is exclusive of since_ts
@@ -140,7 +158,9 @@ def _settle(src: MarketDataSource, rec: TradeRecord, as_of: int) -> TradeRecord:
     except SourceError as exc:
         logger.warning("could not settle trade %d: %s", rec.id, exc)
         return rec
-    return paper.settle(rec, bars, as_of, costs=COSTS)
+    # Live entries fill at the live price inside the forming bar (J4): see paper.settle.
+    live = settings.market_mode == "live"
+    return paper.settle(rec, bars, as_of, costs=COSTS, mid_bar_fill=live)
 
 
 def sync_trades(
@@ -155,7 +175,7 @@ def sync_trades(
     closed = []
     for row in rows:
         rec = row_to_record(row)
-        done = _settle(src, rec, as_of)
+        done = _settle(settings, src, rec, as_of)
         if done.status == "closed":
             closed.append(_save(db, done))
             logger.info("paper trade %d closed by %s", done.id, done.exit_reason)
@@ -179,7 +199,7 @@ def close_trade(
             "زمان بستن باید بعد از زمان ورود باشد.",
         )
     src = _source(db, settings)
-    done = _settle(src, rec, as_of)
+    done = _settle(settings, src, rec, as_of)
     if done.status == "open":
         done = paper.close_manual(
             rec, last_close=_price(src, rec.symbol, as_of), as_of_ts=as_of, costs=COSTS

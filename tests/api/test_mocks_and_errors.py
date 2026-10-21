@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, TypeAdapter
 
@@ -121,3 +122,26 @@ def test_unknown_route_is_404_api_error(client: TestClient) -> None:
     res = client.get("/api/nope")
     assert res.status_code == 404
     assert ApiError.model_validate(res.json()).code == "not_found"
+
+
+def test_wrong_method_is_405_api_error(client: TestClient) -> None:
+    res = client.post("/api/journal")  # GET-only route
+    assert res.status_code == 405
+    err = ApiError.model_validate(res.json())
+    assert err.code == "method_not_allowed" and err.message_fa
+
+
+@pytest.mark.parametrize(
+    ("status", "code"), [(413, "payload_too_large"), (429, "too_many_requests")]
+)
+def test_413_and_429_get_their_own_code(client: TestClient, status: int, code: str) -> None:
+    # The app raises neither yet (no upload limit, no rate limiter): a throwaway route does.
+    @client.app.get(f"/api/_test/{status}")
+    def _raise() -> None:
+        raise HTTPException(status_code=status)
+
+    res = client.get(f"/api/_test/{status}")
+    assert res.status_code == status
+    err = ApiError.model_validate(res.json())
+    assert err.code == code and err.message_fa
+    assert err.code != "server_error"
