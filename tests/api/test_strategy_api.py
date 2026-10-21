@@ -191,13 +191,36 @@ def test_an_injection_ends_unclear(client: TestClient) -> None:
 # ---------- offline ----------
 
 
-def assert_offline(out: ParseResult) -> None:
+def assert_offline(out: ParseResult, suggested: tuple[str, ...] = ()) -> None:
+    """Offline; the message suggests exactly the demo prompts that have pinned answers."""
     assert out.status == "offline" and out.strategy is None and out.message_fa is not None
-    assert all(prompt in out.message_fa for prompt in DEMO_PROMPTS)
+    assert [p for p in DEMO_PROMPTS if p in out.message_fa] == list(suggested)
+    if not suggested:
+        assert "کمی بعد" in out.message_fa  # "try again later", no promise
 
 
-def test_no_keys_is_offline_with_the_demo_prompts(client: TestClient) -> None:
+def test_no_keys_and_nothing_pinned_is_offline_without_suggestions(client: TestClient) -> None:
     assert_offline(parse(client, EVALS["en-01"]["text"]))  # the app's own gateway, no keys
+
+
+def test_offline_suggests_only_the_demo_prompts_pinned_in_the_seed_file(tmp_path: Path) -> None:
+    """data/llm/pinned.jsonl pins demo prompt 1: the message offers it, and it then works."""
+    data = tmp_path / "data"
+    (data / "llm").mkdir(parents=True)
+    line = {
+        "prompt_id": PARSE.prompt_id,
+        "facts": {"text": normalize_text(DEMO_PROMPTS[0])},
+        "output": answer(EVALS["fa-01"]["strategy"]),
+    }
+    (data / "llm" / "pinned.jsonl").write_text(json.dumps(line, ensure_ascii=False) + "\n")
+    app = create_app(make_settings(tmp_path, data_dir=data))  # no keys
+    with TestClient(app) as c:
+        with app.state.session_factory() as db:
+            ensure_demo_user(db)
+            db.commit()
+        assert_offline(parse(c, EVALS["en-01"]["text"]), suggested=(DEMO_PROMPTS[0],))
+        out = parse(c, DEMO_PROMPTS[0])
+        assert out.status == "ok" and out.meta is not None and out.meta.provider == "pinned"
 
 
 def test_cache_only_miss_is_offline_with_no_call(client: TestClient) -> None:

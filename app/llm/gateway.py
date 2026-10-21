@@ -162,6 +162,11 @@ class LLMGateway:
         """Every key in the order this task tries them (before round-robin rotation)."""
         return [p for name in self._provider_names(task) for p in self._groups[name]]
 
+    def is_pinned(self, task: PromptTask, facts: Facts) -> bool:
+        """True if a valid pinned answer exists for these facts (served in every mode)."""
+        cached = self._read_cache(task, cache_key(task.prompt_id, facts), facts)
+        return cached is not None and cached[1].pinned
+
     def usage(self) -> dict[tuple[str, str], int]:
         """Attempts so far in this process, by (key alias, outcome)."""
         with self._lock:

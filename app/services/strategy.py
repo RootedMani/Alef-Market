@@ -9,6 +9,7 @@ The LLM only translates; code decides everything a user is shown:
 
 Status when the gateway falls back to the template: "unclear" if a provider answered but every
 answer was refused, otherwise "offline" (no keys, a cache-only miss, every provider down).
+The offline message suggests only the demo prompts with a pinned answer (``pinned.jsonl``).
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ def parse_strategy(gateway: LLMGateway, req: ParseRequest) -> ParseResult:
     if bare_moving_average(text):
         return ParseResult(status="unclear", message_fa=STRATEGY_WHICH_MA_FA, detected_lang=lang)
     outcome = gateway.run_json(TASKS["strategy_parse"], {"text": text}, fallback=_placeholder)
-    return _result(outcome, lang)
+    return _result(gateway, outcome, lang)
 
 
 def edit_strategy(gateway: LLMGateway, req: EditRequest) -> ParseResult:
@@ -56,7 +57,7 @@ def edit_strategy(gateway: LLMGateway, req: EditRequest) -> ParseResult:
         return ParseResult(status="unclear", message_fa=STRATEGY_WHICH_MA_FA, detected_lang=lang)
     facts = {"strategy": req.strategy.model_dump(mode="json"), "instruction": instruction}
     outcome = gateway.run_json(TASKS["strategy_edit"], facts, fallback=_placeholder)
-    result = _result(outcome, lang)
+    result = _result(gateway, outcome, lang)
     if result.strategy is None:
         return result
     changes = strategy_changes_fa(req.strategy, result.strategy)  # reordering is no change
@@ -67,13 +68,21 @@ def edit_strategy(gateway: LLMGateway, req: EditRequest) -> ParseResult:
     return result.model_copy(update={"changes_fa": changes})
 
 
-def _result(outcome: LLMOutcome[StrategyParseOutput], lang: Lang) -> ParseResult:
+def _pinned_demo_prompts(gateway: LLMGateway) -> tuple[str, ...]:
+    """The demo prompts whose parse answer is pinned: the only ones that work offline."""
+    task = TASKS["strategy_parse"]
+    return tuple(p for p in DEMO_PROMPTS if gateway.is_pinned(task, {"text": normalize_text(p)}))
+
+
+def _result(
+    gateway: LLMGateway, outcome: LLMOutcome[StrategyParseOutput], lang: Lang
+) -> ParseResult:
     out, meta = outcome.value, outcome.meta
     if meta.source == "template":
         if any(a.outcome == "invalid_output" for a in outcome.attempts):
             message = strategy_unclear_fa(DEMO_PROMPTS[0])
             return ParseResult(status="unclear", message_fa=message, detected_lang=lang, meta=meta)
-        message = strategy_offline_fa(DEMO_PROMPTS)
+        message = strategy_offline_fa(_pinned_demo_prompts(gateway))
         return ParseResult(status="offline", message_fa=message, detected_lang=lang, meta=meta)
     if out.status == "ok":
         assert out.strategy is not None

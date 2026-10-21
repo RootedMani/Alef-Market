@@ -153,8 +153,11 @@ STRATEGY_WHICH_MA_FA = (
 )
 
 
-def strategy_offline_fa(demo_prompts: tuple[str, ...]) -> str:
-    listed = " ".join(f"{i}) «{p}»" for i, p in enumerate(demo_prompts, start=1))
+def strategy_offline_fa(pinned_prompts: tuple[str, ...]) -> str:
+    """Suggests only demo prompts with a pinned answer: those really work without the LLM."""
+    if not pinned_prompts:
+        return "الان به سرویس تبدیل متن به استراتژی دسترسی ندارم. کمی بعد دوباره امتحان کنید."
+    listed = " ".join(f"{i}) «{p}»" for i, p in enumerate(pinned_prompts, start=1))
     return (
         "الان به سرویس تبدیل متن به استراتژی دسترسی ندارم. "
         f"این نمونه‌ها بدون آن هم کار می‌کنند: {listed}"
