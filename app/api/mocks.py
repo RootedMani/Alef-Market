@@ -67,8 +67,9 @@ T0 = int(datetime(2026, 10, 10, 6, 30, tzinfo=UTC).timestamp() * 1000)  # 10:00 
 _BASE_PRICE = {"BTC/USDT": 63_000.0, "ETH/USDT": 2_450.0}
 
 
-def _meta(prompt: str) -> TextMeta:
-    return TextMeta(source="template", prompt=prompt, provider=None)
+def _meta(task: str) -> TextMeta:
+    """Mock prose meta naming the task's CURRENT prompt id (``why.v2``, ``insight.v3``, …)."""
+    return TextMeta(source="template", prompt=TASKS[task].prompt_id, provider=None)
 
 
 def demo_user() -> UserPublic:
@@ -190,7 +191,7 @@ def why(symbol: Symbol, timeframe: Timeframe, ts: int) -> WhyExplanation:
         "این حرکت با خبر ورود سرمایه به ETFها همزمان بود و ناحیهٔ مقاومت را شکست."
     )
     return WhyExplanation(
-        facts=facts, narrative=Narrative(text_fa=text, meta=_meta("why.v1")), no_news=False
+        facts=facts, narrative=Narrative(text_fa=text, meta=_meta("why")), no_news=False
     )
 
 
@@ -228,7 +229,7 @@ def briefing() -> Briefing:
         ],
         watch_fa=["BTC حدود 1% با ناحیهٔ مقاومت فاصله دارد.", "امروز نرخ تورم آمریکا اعلام می‌شود."],
     )
-    return Briefing(facts=facts, prose=prose, meta=_meta("briefing.v1"), generated_at_ts=T0)
+    return Briefing(facts=facts, prose=prose, meta=_meta("briefing"), generated_at_ts=T0)
 
 
 def _strategy() -> Strategy:
@@ -324,7 +325,7 @@ def backtest_result(req: BacktestRequest | None = None) -> BacktestResult:
         summary=Narrative(
             text_fa="این استراتژی 0.59% بازده داشت در حالی که خرید و نگهداری 0.8% بود. "
             "تعداد معامله‌ها (2) کم است و نتیجه قابل اتکا نیست.",
-            meta=_meta("backtest_summary.v1"),
+            meta=_meta("backtest_summary"),
         ),
     )
 
@@ -407,7 +408,7 @@ def journal() -> JournalSummary:
                 text=Narrative(
                     text_fa="این معامله 8 دقیقه بعد از یک ضرر باز شد. "
                     "68% معامله‌هایت در این شرایط ضرر بوده‌اند (25 معامله).",
-                    meta=_meta("insight.v1"),
+                    meta=_meta("insight"),
                 ),
                 evidence=[
                     Evidence(label_fa="نرخ ضرر", value=68, unit="pct"),
@@ -427,7 +428,7 @@ def journal() -> JournalSummary:
             exit_reason="stop",
             narrative=Narrative(
                 text_fa="ورود نزدیک ناحیهٔ مقاومت بود و معامله با حد ضرر بسته شد (-1.2R).",
-                meta=_meta("trade_review.v1"),
+                meta=_meta("trade_review"),
             ),
         ),
     )

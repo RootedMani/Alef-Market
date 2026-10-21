@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks
 
 from app.api import mocks
-from app.api.deps import DbDep, SettingsDep, UserDep
+from app.api.deps import DbDep, GatewayDep, SettingsDep, UserDep
 from app.backtest.sizing import size_position
 from app.contracts.journal import (
     AsOfRequest,
@@ -16,6 +16,7 @@ from app.contracts.journal import (
     TradeRecord,
 )
 from app.services import features
+from app.services.journal import PendingText
 
 router = APIRouter(tags=["trades"])
 
@@ -55,7 +56,18 @@ def sync(req: AsOfRequest, settings: SettingsDep, db: DbDep, user: UserDep) -> l
 
 
 @router.get("/journal", response_model=JournalSummary)
-def journal(settings: SettingsDep, db: DbDep, user: UserDep) -> JournalSummary:
+def journal(
+    settings: SettingsDep,
+    db: DbDep,
+    user: UserDep,
+    gateway: GatewayDep,
+    background: BackgroundTasks,
+) -> JournalSummary:
+    """Texts come from the LLM cache or templates; misses are filled after the response."""
     if settings.mock_api:
         return mocks.journal()
-    return features.get_journal(db, settings, user_id=user.id)
+    pending: list[PendingText] = []
+    summary = features.get_journal(db, settings, user_id=user.id, gateway=gateway, pending=pending)
+    if pending:
+        background.add_task(features.fill_journal_texts, gateway, pending)
+    return summary

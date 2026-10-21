@@ -61,5 +61,18 @@ def sync_trades(
     return trades.sync_trades(db, settings, as_of_ts=as_of_ts, user_id=user_id)
 
 
-def get_journal(db: Session, settings: Settings, *, user_id: int) -> JournalSummary:
-    return journal.get_journal(db, settings, user_id=user_id)
+def get_journal(
+    db: Session,
+    settings: Settings,
+    *,
+    user_id: int,
+    gateway: LLMGateway | None = None,
+    pending: list[journal.PendingText] | None = None,
+) -> JournalSummary:
+    """Never waits for an LLM: misses go to ``pending`` for ``fill_journal_texts``."""
+    return journal.get_journal(db, settings, user_id=user_id, gateway=gateway, pending=pending)
+
+
+def fill_journal_texts(gateway: LLMGateway, pending: list[journal.PendingText]) -> None:
+    """Background task after GET /journal: the next GET shows the LLM texts."""
+    journal.fill_texts(gateway, pending)
