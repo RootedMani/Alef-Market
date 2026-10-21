@@ -13,6 +13,9 @@ exactly what the engine runs. Wording rules:
 
 from __future__ import annotations
 
+import json
+from typing import Any
+
 from app.contracts.strategy import (
     Condition,
     Const,
@@ -134,20 +137,40 @@ def _rule(rule: Condition | Group | None) -> str | None:
     return None if rule is None else f"«{rule_to_persian(rule)}»"
 
 
+def _canonical(node: Any) -> Any:
+    """JSON with every AND/OR group's items in a fixed order: "a and b" == "b and a"."""
+    if isinstance(node, dict):
+        out = {k: _canonical(v) for k, v in node.items()}
+        if out.get("kind") == "group":
+            out["items"] = sorted(out["items"], key=lambda i: json.dumps(i, sort_keys=True))
+        return out
+    if isinstance(node, list):
+        return [_canonical(v) for v in node]
+    return node
+
+
+def _rule_changed(
+    label: str, old: Condition | Group | None, new: Condition | Group | None
+) -> list[str]:
+    dump = [None if r is None else _canonical(r.model_dump(mode="json")) for r in (old, new)]
+    return [] if dump[0] == dump[1] else _changed(label, _rule(old), _rule(new))
+
+
 def strategy_changes_fa(old: Strategy, new: Strategy) -> list[str]:
     """Each difference between two strategies as one Persian sentence; [] when they're equal.
 
-    Words only, no ``<``/``>`` or arrows (B12), e.g. «حد ضرر از 2% به 3% تغییر کرد».
+    Reordering the items of an AND/OR group is not a change. Words only, no ``<``/``>`` or
+    arrows (B12), e.g. «حد ضرر از 2% به 3% تغییر کرد».
     """
     o, n = old.exits, new.exits
-    changes = _changed("شرط ورود", _rule(old.entry), _rule(new.entry))
+    changes = _rule_changed("شرط ورود", old.entry, new.entry)
     changes += _changed("حد ضرر", _pct(o.stop_loss_pct), _pct(n.stop_loss_pct))
     changes += _changed("حد سود", _pct(o.take_profit_pct), _pct(n.take_profit_pct))
     if o.time_exit_bars is None and n.time_exit_bars is not None:
         changes.append(f"خروج بعد از {n.time_exit_bars} کندل اضافه شد")
     else:
         changes += _changed("خروج زمانی", _bars(o.time_exit_bars), _bars(n.time_exit_bars))
-    changes += _changed("شرط خروج", _rule(o.exit_rule), _rule(n.exit_rule))
+    changes += _rule_changed("شرط خروج", o.exit_rule, n.exit_rule)
     if old.sizing != new.sizing:
         changes.append(f"اندازهٔ پوزیشن از {_size(old.sizing)} به {_size(new.sizing)} تغییر کرد")
     return changes

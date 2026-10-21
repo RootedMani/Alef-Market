@@ -59,8 +59,8 @@ def edit_strategy(gateway: LLMGateway, req: EditRequest) -> ParseResult:
     result = _result(outcome, lang)
     if result.strategy is None:
         return result
-    changes = strategy_changes_fa(req.strategy, result.strategy)
-    if result.strategy == req.strategy or not changes:
+    changes = strategy_changes_fa(req.strategy, result.strategy)  # reordering is no change
+    if not changes:
         return ParseResult(
             status="unclear", message_fa=STRATEGY_NO_CHANGE_FA, detected_lang=lang, meta=result.meta
         )

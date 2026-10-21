@@ -303,3 +303,11 @@ def test_the_mock_parse_readback_is_the_code_readback(mock_client: TestClient) -
     assert out.strategy is not None and out.readback_fa == strategy_to_persian(out.strategy)
     assert "<" not in out.readback_fa and ">" not in out.readback_fa
     assert out.meta is not None and out.meta.prompt == PARSE.prompt_id
+
+
+def test_an_edit_that_only_reorders_the_conditions_is_refused(client: TestClient) -> None:
+    data = OLD.model_dump(mode="json")
+    data["entry"]["items"] = data["entry"]["items"][::-1]
+    use(client, answer(data))
+    out = edit(client, "swap the two conditions")
+    assert out.status == "unclear" and out.strategy is None

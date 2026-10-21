@@ -184,3 +184,11 @@ def test_strategy_changes_in_words(new: Strategy, expected: list[str]) -> None:
     changes = strategy_changes_fa(BASE, new)
     assert changes == expected
     assert not any(c in "".join(changes) for c in "<>→←")  # words only (B12)
+
+
+def test_reordered_and_or_items_are_not_a_change() -> None:
+    old = strategy(group("and", RSI_LT_30, CLOSE_GT_EMA200), stop=2)
+    reordered = strategy(group("and", CLOSE_GT_EMA200, RSI_LT_30), stop=2)
+    assert strategy_changes_fa(old, reordered) == []
+    moved = strategy(group("and", CLOSE_GT_EMA200, RSI_LT_30), stop=3)
+    assert strategy_changes_fa(old, moved) == ["حد ضرر از 2% به 3% تغییر کرد"]
