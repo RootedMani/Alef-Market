@@ -6,7 +6,6 @@ from fastapi import APIRouter, BackgroundTasks
 
 from app.api import mocks
 from app.api.deps import DbDep, GatewayDep, SettingsDep, UserDep
-from app.backtest.sizing import size_position
 from app.contracts.journal import (
     AsOfRequest,
     JournalSummary,
@@ -15,7 +14,7 @@ from app.contracts.journal import (
     SizeRequest,
     TradeRecord,
 )
-from app.services import features
+from app.services import features, trades
 from app.services.journal import PendingText
 
 router = APIRouter(tags=["trades"])
@@ -26,7 +25,7 @@ def size(req: SizeRequest, settings: SettingsDep) -> SizeQuote:
     """Position size from stop % and risk %. Pure and instant: call it on every keystroke."""
     if settings.mock_api:
         return mocks.size_quote(req)
-    return size_position(req)
+    return trades.size_quote(req)
 
 
 @router.post("/trades", response_model=TradeRecord, status_code=201)

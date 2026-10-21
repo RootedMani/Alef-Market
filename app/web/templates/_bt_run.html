@@ -15,7 +15,7 @@
   {% if p.sample_note %}<p class="sample-note" role="note">{{ p.sample_note }}</p>{% endif %}
   {% if r.summary %}<p class="narrative">{{ r.summary.text_fa|ltr }}</p>{% endif %}
 
-  <div id="bt-chart" class="chart bt-chart" dir="ltr"></div>
+  <div id="bt-chart" class="chart bt-chart" dir="ltr" data-equity-chart data-source="bt-data"></div>
   <p class="legend muted">
     <span class="swatch swatch-ema"></span>این ایده
     <span class="swatch swatch-hold"></span>فقط نگه‌داشتن

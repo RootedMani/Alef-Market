@@ -1,0 +1,5 @@
+{# The quiet re-fetch: only the words, swapped into the cards and review already on the page. #}
+{% if j %}
+{% for i in j.insights %}<p id="ins-text-{{ i.key }}" hx-swap-oob="innerHTML">{{ i.text.text_fa|ltr }}</p>{% endfor %}
+{% if j.latest_review %}<p id="review-text" hx-swap-oob="innerHTML">{{ j.latest_review.narrative.text_fa|ltr }}</p>{% endif %}
+{% endif %}

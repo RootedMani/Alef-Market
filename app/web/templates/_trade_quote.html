@@ -1,0 +1,15 @@
+{# The size quote for opening now, in plain words (POST /api/trades/size, priced at the clock). #}
+{% from "_ui.html" import error_card %}
+{% if p.failure %}
+{{ error_card(p.failure.error.message_fa) }}
+{% else %}
+<dl class="kv quote">
+  <div><dt>قیمت ورود اکنون</dt><dd><bdi dir="ltr">{{ p.entry|price }} USDT</bdi></dd></div>
+  <div><dt>حجم</dt><dd><bdi dir="ltr">{{ "%.5f"|format(p.size.qty) }} {{ p.base }}</bdi></dd></div>
+  <div><dt>ارزش معامله</dt><dd><bdi dir="ltr">{{ p.size.notional|price }} USDT</bdi></dd></div>
+  <div><dt>حد ضرر در</dt><dd><bdi dir="ltr">{{ p.size.stop_price|price }}</bdi> (<bdi dir="ltr">-{{ p.stop_pct }}%</bdi>)</dd></div>
+  {% if p.target_price %}<div><dt>حد سود در</dt><dd><bdi dir="ltr">{{ p.target_price|price }}</bdi> (<bdi dir="ltr">+{{ p.target_pct }}%</bdi>)</dd></div>{% endif %}
+</dl>
+<p class="risk-line">اگر حد ضرر بخورد، حدود <bdi dir="ltr">{{ p.size.risk_amount|price }} USDT</bdi> از دست می‌رود (<bdi dir="ltr">{{ p.risk_pct }}%</bdi> سرمایه).</p>
+{% if p.size.capped %}<p class="muted small">اندازهٔ معامله به کل سرمایه محدود شد.</p>{% endif %}
+{% endif %}

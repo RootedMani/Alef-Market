@@ -8,13 +8,15 @@ uses ``journal.paper.settle`` -> ``backtest.exits.check_exit`` (A3).
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.backtest.sizing import size_position
 from app.contracts.backtest import Costs
 from app.contracts.common import TimestampMs
-from app.contracts.journal import OpenTradeRequest, TradeRecord
+from app.contracts.journal import OpenTradeRequest, SizeQuote, SizeRequest, TradeRecord
 from app.data.base import MarketDataSource, SourceError
 from app.data.ccxt_source import CcxtSource
 from app.data.replay import ReplaySource
@@ -49,6 +51,47 @@ def _price(src: MarketDataSource, symbol: str, as_of_ts: int) -> float:
         return src.latest_price(symbol, as_of_ts)  # type: ignore[arg-type]
     except SourceError as exc:
         raise InvalidRequest(str(exc), "قیمتی برای این زمان در دسترس نیست.") from exc
+
+
+def size_quote(req: SizeRequest) -> SizeQuote:
+    """Position size from stop % and risk %. Pure (POST /api/trades/size)."""
+    return size_position(req)
+
+
+@dataclass(frozen=True)
+class TradeQuote:
+    """What opening a trade now would do: the same fill price and equity as ``open_trade``."""
+
+    entry_price: float  # the last closed 1m close at as_of_ts, plus slippage
+    equity: float
+    size: SizeQuote
+
+
+def quote_trade(
+    db: Session,
+    settings: Settings,
+    *,
+    symbol: str,
+    as_of_ts: TimestampMs | None,
+    stop_pct: float,
+    risk_pct: float,
+    user_id: int,
+) -> TradeQuote:
+    as_of = _as_of(settings, as_of_ts)
+    entry = _price(_source(db, settings), symbol, as_of) * (1 + COSTS.slippage_pct / 100)
+    equity = equity_now(db, user_id)
+    req = SizeRequest(entry_price=entry, stop_pct=stop_pct, risk_pct=risk_pct, equity=equity)
+    return TradeQuote(entry, equity, size_quote(req))
+
+
+def open_trades(db: Session, user_id: int) -> list[TradeRecord]:
+    """The user's open trades, newest first."""
+    rows = db.scalars(
+        select(TradeRow)
+        .where(TradeRow.user_id == user_id, TradeRow.status == "open")
+        .order_by(TradeRow.entry_ts.desc(), TradeRow.id.desc())
+    ).all()
+    return [row_to_record(r) for r in rows]
 
 
 def _save(db: Session, rec: TradeRecord) -> TradeRecord:

@@ -266,6 +266,10 @@ def chart_page(
     if state is not None:
         extra["days"] = chart_days(settings, demo_entry_ts(settings))
         extra["timeframes"] = market.CHART_TIMEFRAMES
+        from app.web.trading import panel_ctx  # trading imports this module
+
+        start = state.start_ts if state.mode == "replay" else None
+        extra["trade"] = panel_ctx(db, settings, request, symbol=state.symbol, start_ts=start)
         extra["panel"] = annotations_panel(
             db,
             settings,

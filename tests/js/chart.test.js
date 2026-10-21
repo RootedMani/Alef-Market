@@ -196,3 +196,17 @@ test("equity axis ticks are always a Tehran date, never a clock time", () => {
     for (const type of [0, 1, 2, 3, 4]) assert.match(C.equityTick(at(ts), type), /^\d{2}-\d{2}$/);
   }
 });
+
+test("open trades are synced every few bars and after jumps, not on the first render", () => {
+  assert.equal(C.syncDue(10, -1, 3), false, "first render: just the baseline");
+  assert.equal(C.syncDue(12, 10, 3), false);
+  assert.equal(C.syncDue(13, 10, 3), true);
+  assert.equal(C.syncDue(2, 40, 3), true, "a jump back also syncs");
+});
+
+test("an equity curve without a comparison line or trades still draws", () => {
+  const s = C.backtestSeries({ offset: TEHRAN, equity: [[DAY_START, 10000]] }, {});
+  assert.equal(s.equity.length, 1);
+  assert.deepEqual(s.hold, []);
+  assert.deepEqual(s.markers, []);
+});

@@ -188,14 +188,14 @@ def chart_data(result: BacktestResult, offset_ms: int) -> str:
 # ---- fragments ----
 
 
-def _failure(exc: Exception) -> dict[str, Any]:
+def failure_card(exc: Exception) -> dict[str, Any]:
     status, error = api_error_for(exc)
     if status >= 500 and status != 501:
         logger.exception("backtest fragment failed")
     return {"error": error, "placeholder": status == 501}
 
 
-def _invalid(exc: ValidationError) -> dict[str, Any]:
+def invalid_card(exc: ValidationError) -> dict[str, Any]:
     problems = "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors())
     return {"error": api_error(422, problems), "placeholder": False}
 
@@ -244,9 +244,9 @@ def parse_fragment(
             mocks.parse_result() if settings.mock_api else features.parse_strategy(gateway, req)
         )
     except ValidationError as exc:
-        return _render(request, settings, "_bt_parse.html", {"failure": _invalid(exc)})
+        return _render(request, settings, "_bt_parse.html", {"failure": invalid_card(exc)})
     except Exception as exc:
-        return _render(request, settings, "_bt_parse.html", {"failure": _failure(exc)})
+        return _render(request, settings, "_bt_parse.html", {"failure": failure_card(exc)})
     return _render(request, settings, "_bt_parse.html", _parse_ctx(result, run))
 
 
@@ -274,10 +274,10 @@ def edit_fragment(
         )
         result = mocks.edit_result() if settings.mock_api else features.edit_strategy(gateway, req)
     except ValidationError as exc:
-        ctx = {"failure": _invalid(exc)}
+        ctx = {"failure": invalid_card(exc)}
         return _render(request, settings, "_bt_parse.html", ctx, retarget="#bt-edit-msg")
     except Exception as exc:
-        ctx = {"failure": _failure(exc)}
+        ctx = {"failure": failure_card(exc)}
         return _render(request, settings, "_bt_parse.html", ctx, retarget="#bt-edit-msg")
     ctx = _parse_ctx(result, run)
     if result.status != "ok":
@@ -303,9 +303,9 @@ def run_fragment(
         else:
             result = features.run_backtest(db, settings, req, user_id=user.id, gateway=gateway)
     except ValidationError as exc:
-        return _render(request, settings, "_bt_run.html", {"failure": _invalid(exc)})
+        return _render(request, settings, "_bt_run.html", {"failure": invalid_card(exc)})
     except Exception as exc:
-        return _render(request, settings, "_bt_run.html", {"failure": _failure(exc)})
+        return _render(request, settings, "_bt_run.html", {"failure": failure_card(exc)})
     shown = result.request
     offset = tz_offset_ms(settings.display_tz, shown.start_ts or 0)
     ctx = {

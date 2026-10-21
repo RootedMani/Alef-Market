@@ -140,14 +140,20 @@
   function backtestSeries(d, colors) {
     const line = ([ts, v]) => ({ time: toChartTime(ts, d.offset), value: v });
     const marks = [];
-    for (const [entry, exit, win] of d.trades) {
+    for (const [entry, exit, win] of d.trades || []) {
       marks.push({ time: toChartTime(entry, d.offset), position: "belowBar", shape: "arrowUp",
         color: colors.entry });
       marks.push({ time: toChartTime(exit, d.offset), position: "aboveBar", shape: "circle",
         color: win ? colors.win : colors.loss });
     }
     marks.sort((a, b) => a.time - b.time);
-    return { equity: d.equity.map(line), hold: d.hold.map(line), markers: marks };
+    return { equity: d.equity.map(line), hold: (d.hold || []).map(line), markers: marks };
+  }
+
+  // Ask the server to settle open trades (and re-price the quote) every few closed bars, and
+  // after any jump. The first render only sets the baseline.
+  function syncDue(shown, last, every) {
+    return last >= 0 && Math.abs(shown - last) >= every;
   }
 
   // "empty" -> a calm card instead of the chart; "stale" -> the chart plus a notice.
@@ -345,7 +351,9 @@
     });
 
     const clock = document.getElementById("rp-clock");
+    const syncBars = Number(ds.syncBars) || 3;
     let lastShown = -1;
+    let syncAt = -1;
     replay.onChange = (r) => {
       const p = r.params();
       if (clock) clock.textContent = fmtClock(r.asOf, offset);
@@ -358,6 +366,8 @@
           detail: { asOfTs: p.as_of_ts, symbol: ds.symbol, timeframe: ds.timeframe, playing: r.playing },
         }));
         refreshAnnotations(r);
+        if (syncDue(r.shown, syncAt, syncBars)) document.dispatchEvent(new Event("alef:sync"));
+        if (syncAt < 0 || syncDue(r.shown, syncAt, syncBars)) syncAt = r.shown;
       }
     };
     wireControls(replay, Number(ds.initialTs));
@@ -383,10 +393,16 @@
     }
   }
 
-  function drawBacktest() {
-    const el = document.getElementById("bt-chart");
-    const src = document.getElementById("bt-data");
-    if (!el || !src || el.dataset.drawn || !window.LightweightCharts) return;
+  // Equity curves (backtest result, journal): every [data-equity-chart] not drawn yet, its
+  // numbers in the <script type="application/json"> named by data-source.
+  function drawEquityCharts() {
+    if (!window.LightweightCharts) return;
+    document.querySelectorAll("[data-equity-chart]:not([data-drawn])").forEach(drawEquity);
+  }
+
+  function drawEquity(el) {
+    const src = document.getElementById(el.dataset.source);
+    if (!src) return;
     el.dataset.drawn = "1";
     const LC = window.LightweightCharts;
     const s = backtestSeries(JSON.parse(src.textContent), {
@@ -400,7 +416,7 @@
     const opts = { lineWidth: 2, lastValueVisible: false, priceLineVisible: false };
     const hold = chart.addSeries(LC.LineSeries, { ...opts, color: css("--muted"), lineStyle: 2 });
     const equity = chart.addSeries(LC.LineSeries, { ...opts, color: css("--accent") });
-    hold.setData(s.hold);
+    if (s.hold.length) hold.setData(s.hold);
     equity.setData(s.equity);
     LC.createSeriesMarkers(equity, s.markers);
     requestAnimationFrame(() => chart.timeScale().fitContent()); // after autoSize has measured
@@ -408,12 +424,13 @@
 
   if (typeof document !== "undefined") {
     document.addEventListener("DOMContentLoaded", init);
-    document.addEventListener("htmx:afterSettle", drawBacktest); // a run result arrived
+    document.addEventListener("DOMContentLoaded", drawEquityCharts); // the journal's curve
+    document.addEventListener("htmx:afterSettle", drawEquityCharts); // a backtest result arrived
   }
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
       STEP_MS, toChartTime, fromChartTime, fmtChartTime, fmtChartDate, fmtClock,
-      closedCount, emaMap, frameAt, Replay, seriesProblem, backtestSeries, equityTick,
+      closedCount, emaMap, frameAt, Replay, seriesProblem, backtestSeries, equityTick, syncDue,
     };
   }
 })();
