@@ -13,17 +13,14 @@ a hint: no provider answered.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from app.contracts.strategy import EditRequest, ParseRequest, Strategy
-from app.db.engine import create_schema, make_engine, make_session_factory
-from app.llm.gateway import LLMGateway, build_gateway
+from app.llm.gateway import LLMGateway
 from app.services.strategy import edit_strategy, parse_strategy
-from app.settings import ROOT_DIR, Settings
 
 pytestmark = pytest.mark.live
 
@@ -37,20 +34,6 @@ ROWS: list[dict[str, Any]] = [
 CASES = [r for r in ROWS if r.get("task", "parse") == "parse"]
 EDITS = [r for r in ROWS if r.get("task") == "edit"]
 BY_ID = {r["id"]: r for r in ROWS}
-
-
-@pytest.fixture(scope="module")
-def gateway(tmp_path_factory: pytest.TempPathFactory) -> Iterator[LLMGateway]:
-    tmp = tmp_path_factory.mktemp("evals")
-    settings = Settings(  # type: ignore[call-arg]
-        _env_file=ROOT_DIR / ".env", db_path=tmp / "evals.db", llm_cache_mode="fallback"
-    )
-    if not any(settings.api_keys(name) for name in settings.llm_provider_order):
-        pytest.skip("no LLM keys in .env (ALEF_GROQ_KEYS / ALEF_GEMINI_KEYS / ...)")
-    engine = make_engine(settings.db_path)
-    create_schema(engine)
-    yield build_gateway(settings, make_session_factory(engine))
-    engine.dispose()
 
 
 def canonical(node: Any) -> Any:
