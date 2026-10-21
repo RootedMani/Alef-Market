@@ -1,9 +1,10 @@
-# Handoff: LLM layer, steps 1–4 (Oct 20–21, 2026)
+# Handoff: LLM layer, steps 1–5 (Oct 20–21, 2026)
 
 Steps 1–3 of the LLM layer are built, tested and on `origin/main` (`47dbeb3`..`267bf48`): the providers, the cache with the pinned seed file, and the gateway. §8 of `docs/architecture-v1.md` describes the rules and matches the code.
 
 **Read first:**
-- **Step 4 (strategy parsing) is done**: `/api/backtest/parse` and `/edit` call the gateway (section below). No other service uses it yet; every other user-visible text is still a template or a mock.
+- **Steps 4 and 5 are done**: `/api/backtest/parse`, `/edit`, the journal texts and the backtest summary use the gateway (sections below). `why` and `briefing` are still templates or mocks.
+- **Pins are the LAST step** (see "Pins" below).
 - **`data/llm/pinned.jsonl` is empty.** The loader works and is tested, but no demo answer is pinned yet.
 - **The decisions below are not yet in §10 of the architecture doc.** §10 has no table for this chat. Copying them in is step 7.
 
@@ -14,7 +15,7 @@ Steps 1–3 of the LLM layer are built, tested and on `origin/main` (`47dbeb3`..
 | `llm/providers.py` | `OpenAICompatProvider`: one httpx client per (provider, key) for Groq, Gemini and OpenRouter (A10). Maps HTTP status to `ProviderError.kind`: 429 → `rate_limited` (with `Retry-After`), 401/403 → `auth`, timeout → `timeout`, everything else → `http_error`. Error text is key-redacted and truncated. If a model rejects `response_format`, the call is retried once without it. `build_providers(settings)` | `test_llm_provider.py` (56) |
 | `llm/cache.py` | `cache_key` = sha256(prompt_id + canonical facts JSON: sorted keys, floats rounded to 9 decimals, −0.0 folded). `put_cached` is one atomic upsert that never touches a pinned row. `load_pinned` makes the DB's pinned set equal `data/llm/pinned.jsonl` | `test_llm_cache.py` (36), including a golden hash that locks the key across machines |
 | `llm/gateway.py` | `LLMGateway.run_json` / `run_text`: the ladder, deadlines, cache modes, `llm_calls` rows. Never raises | `test_llm_gateway.py` (67), driven by `tests/fakes.FakeProvider` and `FakeClock` |
-| `llm/tasks.py` | Task registry: prompt version, output model, `deadline_s`, `max_tokens`, retry hint, `check`. Parse is v3, edit v4, the rest v2 | `test_llm_infra.py` (12): a prompt-hash test fails if a prompt file changes without a new version |
+| `llm/tasks.py` | Task registry: prompt version, output model, `deadline_s`, `max_tokens`, retry hint, `check`. Parse v3, edit v4, insight/trade_review/backtest_summary v3, why/briefing v2 | `test_llm_infra.py` (12): a prompt-hash test fails if a prompt file changes without a new version |
 | `llm/validate.py` | JSON: strip fences → parse → Pydantic (`extra="forbid"`). Prose: Persian, Latin digits, no advice words, every number grounded in the facts | `test_llm_validate.py` (11) |
 | `settings.py` | `llm_cache_mode`, `llm_timeout_s` (8 s), `llm_proxy`, `llm_provider_order`, `llm_task_providers`, `*_keys`, `*_model`, `proxy_for(client)` | `test_proxies.py`, `test_llm_gateway.py` (env parsing) |
 
@@ -62,7 +63,7 @@ no live answer: the cache row if any, else fallback() (template / refusal)
 | `strategy_parse`, `strategy_edit` | 15 | 1000 |
 | `why` | 5 | 800 |
 | `briefing` | 5 | 1000 |
-| `backtest_summary` | 3 | 500 |
+| `backtest_summary` | 2 (inline in `/backtest/run`) | 500 |
 | `insight` | 3 | 400 |
 | `trade_review` | 3 | 600 |
 
@@ -101,7 +102,7 @@ The deadline bounds the whole ladder for one call. An answer that arrives after 
 
 ## Step 4: strategy parsing (done, Oct 21)
 
-On `origin/main` (step by step, no squash). `make check`: **769 passed**, 12 skipped, 31 deselected (live).
+On `origin/main` (step by step, no squash). `make check` then: **769 passed**, 12 skipped, 31 deselected (live).
 
 | Piece | Where | Tests |
 |---|---|---|
@@ -125,11 +126,29 @@ On `origin/main` (step by step, no squash). `make check`: **769 passed**, 12 ski
 - **«یک و نیم درصد» is refused.** Number words are not added up, so 1.5 is not in the text's numbers; the user is told it was unclear. Digits («1.5», «۱٫۵», «۱/۵») work.
 - **Removing a moving-average condition by name asks "SMA or EMA?".** An edit like «شرط میانگین متحرک رو حذف کن» on a strategy with one EMA is a bare moving average to the pre-check, so it gets the question before any LLM call, although the strategy makes it unambiguous. Writing «شرط EMA رو حذف کن» works.
 
-## What is NOT done yet
+## Step 5: journal texts and the backtest summary (done, Oct 21)
 
-**Step 5: journal texts and the backtest summary.**
-- **`insight` and `trade_review`.** Swap `services/journal.py::_insight_text` / `_review_text` for `gateway.run_text(…, fallback=<existing template>)`.
-- **`backtest_summary`.** Fill `BacktestResult.summary` in `services/backtest.py` from `result.metrics` (B11). `profit_factor`, `win_rate_pct` and `avg_r` can be None.
+Branch `llm/step5-journal-texts`. `make check`: **821 passed**, 12 skipped, 35 deselected (live).
+
+| Piece | Where | Tests |
+|---|---|---|
+| Gateway: per-call `mode=` (a global "only" always wins); `fill()` = "prefer" (cache hit, else LLM) with an in-flight set of cache keys behind the gateway lock, so a text is filled once at a time | `llm/gateway.py` | `test_llm_gateway.py` |
+| **`GET /api/journal` never waits for an LLM.** Each insight card and the review come from the cache (pinned or an earlier answer) or the template (`mode="only"`, no network); misses go to `pending` and a background task fills them after the response, so the next GET shows the LLM text. `summarize(trades, tz=…)` without a narrator is unchanged (templates) | `services/journal.py`, `routes/trades.py` | `tests/api/test_journal_texts.py`: no call during the request, filled after, a failing provider, 10 parallel GETs → exactly one call per text (repeated 10×) |
+| LLM facts add the names the text may quote: `title_fa` (a bad hour carries its hours, «ساعت پرضرر 15–16»; **the card's `title_fa` is unchanged**) and `matched_fa`; numbers inside them count as grounded | `services/journal.py` | `test_journal_texts.py` (15 and 16 only in the title) |
+| **No causes or feelings, in code:** `prose_checks.cause_feeling_problems` runs as `PromptTask.check` for insight, trade_review and backtest_summary. Whole words from `CAUSE_WORDS` («چون», «به دلیل», «باعث», because…) and `FEELING_WORDS` («ترس», «طمع», «انتقام», «فومو», …) are invalid output; an exact `*_fa` title from the facts may be quoted (removed before the scan). All templates pass; the v3 prompts list the same words (tested) | `llm/prose_checks.py` | `test_prose_checks.py`, `test_journal_text.py` |
+| Prompts v3: insight names the pattern by `title_fa`; trade_review drops "nearest levels" (not in the facts) and uses `matched_fa`; backtest_summary uses `small_sample` (code: `n_trades < 20`) and never writes a threshold | `llm/prompts/` | `test_llm_infra.py`, `test_prose_checks.py` |
+| **`BacktestResult.summary`:** inline in `POST /backtest/run`, `mode="prefer"` (a cached or pinned summary returns with no call), else the LLM within 2 s, else `backtest_summary_template` (None metrics, zero trades, small sample in words, never "20"). Made **before** the run's DB flush, else the cache write can't get SQLite's lock (a mutation test proved the test catches it) | `services/backtest.py`, `llm/templates.py` | `test_backtest_api.py`, `test_backtest_summary_text.py` |
+| Live smoke: every Sara insight, her review and two summaries must come back from the real LLM | `tests/evals/test_prose_evals.py` | `pytest -m live tests/evals` |
+
+- **The cause/feeling word list is mine** (the Brief isn't in the repo): review `CAUSE_WORDS` / `FEELING_WORDS`. Changing them means new prompt versions (the prompts list them).
+- **A failed fill is retried on the next GET** (no negative cache); provider cooldowns bound it.
+- Mocks now name the current prompt ids from `TASKS`.
+
+## Pins
+
+**Pins are the LAST step.** Re-do them after any change to the engine, the market data, Sara's data, a prompt, or `TradeReviewFacts`: the cache key is the prompt id plus the exact facts, so any of these changes the facts (or the id) and silently orphans the pin. The analysis session will add the nearest level to `TradeReviewFacts`, which means a `trade_review.v4` and new review pins.
+
+## What is NOT done yet
 
 **Step 6: scripts and checks run on your machine.**
 - **`scripts/llm_probe`**: check each configured key and provider.
@@ -146,7 +165,7 @@ On `origin/main` (step by step, no squash). `make check`: **769 passed**, 12 ski
 
 ```bash
 make check                                   # lint + tests, exactly what CI runs
-uv run pytest -m live tests/evals -v         # the 20 strategy prompts on the real providers (keys in .env)
+uv run pytest -m live tests/evals -v         # strategy prompts/edits + prose smoke on the real providers
 ALEF_LLM_CACHE_MODE=only make dev            # full offline rehearsal: no LLM network at all
 ALEF_LLM_CACHE_MODE=prefer make dev          # demo day: cache first
 make reset-demo                              # rebuilds the DB and reloads data/llm/pinned.jsonl
@@ -158,6 +177,6 @@ make reset-demo                              # rebuilds the DB and reloads data/
 - `ALEF_LLM_TASK_PROVIDERS='{"strategy_parse":["gemini"]}'`: a per-task provider order.
 
 ## State of the repo
-- `origin/main` is at `d3525b6` (steps 1–3 and the gap follow-ups). Step 4 is on `llm/step4-strategy-parse`, fast-forwarded into local `main`, **not pushed**.
+- `origin/main` has steps 1–5. Each step's branch (`llm/step4-strategy-parse`, `llm/step5-journal-texts`) was fast-forwarded into `main`, no squash.
 - `fix/llm-gateway-hardening` (`a6414ee`, same tree as `0ea952c` on main) was deleted. The four older `fix/*` branches are untouched.
 - **Dependencies:** `uv sync` still fails on this machine, because `files.pythonhosted.org` times out. Use the hash-verified mirror install in `handoff-backtester.md` § State.
