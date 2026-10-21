@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.api import mocks
 from app.api.deps import DbDep, SettingsDep, get_current_user
 from app.api.errors import api_error, api_error_for
+from app.contracts.analysis import LevelZone
 from app.contracts.common import Symbol, Timeframe
 from app.services import features, market
 from app.services.demo import demo_entry_ts
@@ -182,6 +183,11 @@ def _failure(exc: Exception) -> dict[str, Any]:
     return {"error": error, "placeholder": status == 501}
 
 
+def top_levels(levels: list[LevelZone], n: int = 4) -> list[LevelZone]:
+    """The strongest zones of both kinds: rank 1 support and resistance, then rank 2, …"""
+    return sorted(levels, key=lambda z: (z.rank, z.kind))[:n]
+
+
 def annotations_panel(
     db: Session,
     settings: Settings,
@@ -207,7 +213,7 @@ def annotations_panel(
         return {"failure": _failure(exc), "symbol": symbol, "timeframe": timeframe}
     return {
         "ann": ann,
-        "levels": sorted(ann.levels, key=lambda z: (z.kind, z.rank))[:4],
+        "levels": top_levels(ann.levels),
         "patterns": ann.patterns[-3:],
         "moves": ann.moves[-3:],
         "symbol": symbol,
