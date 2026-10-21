@@ -122,7 +122,25 @@ def test_named_indicators_ignore_case_spacing_and_hyphens(text: str, names: set[
         ("حجم بیشتر از میانگین متحرک حجم ۲۰", False),  # that's average volume
         ("volume above its moving average of volume", False),
         ("the market is calm", False),
+        ("میانگین متحرک ۲۰۰ روزه", True),  # a period but no type
     ],
 )
 def test_bare_moving_average(text: str, bare: bool) -> None:
     assert bare_moving_average(text) is bare
+
+
+@pytest.mark.parametrize(
+    ("text", "name"),
+    [
+        ("قیمت بالای میانگین متحرک ۲۰۰ روزه نمایی", "ema"),
+        ("قیمت بالای میانگین متحرک ۵۰ نمایی بود", "ema"),
+        ("قیمت بالای میانگین متحرک ۲۰ روزهٔ ساده", "sma"),
+        ("قیمت بالای میانگین متحرک ۲۰ روزه‌ی ساده", "sma"),
+        ("قیمت بالای مووینگ اوریج ۱۰۰ روزه نمایی", "ema"),
+        ("قیمت بالای مووینگ ۵۰ کندلی ساده", "sma"),
+    ],
+)
+def test_a_period_between_moving_average_and_its_type_still_names_it(text: str, name: str) -> None:
+    """«میانگین متحرک ۲۰۰ روزه نمایی» says exponential: no "SMA or EMA?" question."""
+    assert not bare_moving_average(text)
+    assert named_indicators(text) == {name}

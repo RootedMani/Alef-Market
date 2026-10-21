@@ -174,6 +174,15 @@ def test_a_bare_moving_average_asks_which_one_without_calling_the_llm(
     assert p.calls == []
 
 
+def test_a_moving_average_typed_after_its_period_parses(client: TestClient) -> None:
+    text = "وقتی قیمت بالای میانگین متحرک ۲۰۰ روزه نمایی رفت بخر"
+    ema = {"kind": "indicator", "name": "ema", "period": 200}
+    entry = {"kind": "cond", "left": {"kind": "price", "field": "close"}, "op": ">", "right": ema}
+    use(client, answer({"entry": entry}))
+    out = parse(client, text)
+    assert out.status == "ok" and out.readback_fa is not None and "EMA(200)" in out.readback_fa
+
+
 def test_refused_answers_end_unclear_not_offline(client: TestClient) -> None:
     ungrounded = answer({"entry": EVALS["en-01"]["strategy"]["entry"]})
     use(client, ungrounded, ungrounded)

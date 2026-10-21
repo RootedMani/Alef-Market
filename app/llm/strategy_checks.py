@@ -170,6 +170,11 @@ _VOLUME_AVERAGES = (
     "میانگین متحرک حجم",
 )
 _BARE_MA = ("moving average", "میانگین متحرک", "مووینگ اوریج", "مووینگ")
+# «میانگین متحرک ۲۰۰ روزه نمایی»: a period (and «روزه», «کندلی», …) between the name and its type.
+_PERSIAN_TYPED_MA = re.compile(
+    r"(?:میانگین\s*متحرک|مووینگ(?:\s*اوریج)?)\s*(?:\d+(?:\.\d+)?\s*)?"
+    r"(?:(?:روزه|کندلی|دوره ای|دوره)\s*[\u0654ی]?\s*)?(نمایی|ساده)"
+)
 _BARE_MA_TOKEN = re.compile(r"(?<![a-z])ma(?![a-z])")
 _QUALIFIED_MA_TOKEN = re.compile(r"(?:simple|exponential)[\s\-_]*ma(?![a-z])")
 
@@ -193,6 +198,8 @@ def named_indicators(text: str, *, aliases: bool = True) -> set[str]:
     """Which of RSI/EMA/SMA/ATR the text names. ``aliases=False``: Latin names only."""
     found = _latin_named(text)
     if aliases:
+        typed = _PERSIAN_TYPED_MA.findall(normalize_text(text))
+        found |= {"ema" if kind == "نمایی" else "sma" for kind in typed}
         squashed = _squash(text)
         for name, spellings in INDICATOR_ALIASES.items():
             if any(_squash(s) in squashed for s in spellings):
@@ -202,7 +209,7 @@ def named_indicators(text: str, *, aliases: bool = True) -> set[str]:
 
 def bare_moving_average(text: str) -> bool:
     """A moving average not called simple or exponential (or of volume): SMA or EMA is a guess."""
-    squashed = _squash(text)
+    squashed = _squash(_PERSIAN_TYPED_MA.sub(" ", normalize_text(text)))
     for qualified in (*INDICATOR_ALIASES["ema"], *INDICATOR_ALIASES["sma"], *_VOLUME_AVERAGES):
         squashed = squashed.replace(_squash(qualified), "")
     if any(_squash(term) in squashed for term in _BARE_MA):
