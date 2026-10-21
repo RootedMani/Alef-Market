@@ -27,8 +27,8 @@ def test_every_task_has_its_prompt_file() -> None:
 # If this fails, copy the prompt to the next version and bump it in llm/tasks.py, then add the
 # new id's hash here.
 PROMPT_HASHES = {
-    "strategy_parse.v2": "ebb9d86db561893f",
-    "strategy_edit.v2": "a9b2e18c94b263b8",
+    "strategy_parse.v3": "db60110a48f208d8",
+    "strategy_edit.v3": "978896c2738deb9f",
     "why.v2": "7dada32cf406ce8b",
     "briefing.v2": "fe671168fdc24ca4",
     "backtest_summary.v2": "0753d9fea9ab6aa4",
@@ -45,6 +45,19 @@ def test_a_prompt_never_changes_without_a_new_version(name: str) -> None:
     assert PROMPT_HASHES[task.prompt_id] == digest, (
         f"{task.prompt_id} changed: copy it to v{task.version + 1} instead of editing it"
     )
+
+
+@pytest.mark.parametrize("name", ["strategy_parse", "strategy_edit"])
+def test_strategy_prompts_state_the_code_rules(name: str) -> None:
+    """Code refuses these, so the prompt must ask for them (else every answer is a retry)."""
+    text = system_prompt(name)
+    assert TASKS[name].version == 3
+    assert '"kind": "cond"' in text  # the edit prompt carries the schema too
+    assert "Never write a number" in text  # defaults are filled by code
+    assert '"sizing"' in text and "omit" in text.lower()
+    assert "یک درصد" in text  # number words are numbers
+    assert "moving average" in text and '"unclear"' in text  # SMA or EMA: never a guess
+    assert "exit_rule" in text and "never a short" in text  # «بفروش» after a buy rule
 
 
 def test_prose_prompts_include_the_glossary() -> None:

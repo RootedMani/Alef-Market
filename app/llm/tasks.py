@@ -68,7 +68,7 @@ TASKS: dict[str, PromptTask] = {
     for t in (
         PromptTask(
             "strategy_parse",
-            2,
+            3,
             "json",
             StrategyParseOutput,
             use_glossary=False,
@@ -78,7 +78,7 @@ TASKS: dict[str, PromptTask] = {
         ),
         PromptTask(
             "strategy_edit",
-            2,
+            3,
             "json",
             StrategyParseOutput,
             use_glossary=False,

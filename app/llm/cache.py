@@ -6,7 +6,7 @@ Groq is down. ``pinned`` rows are hand-reviewed demo texts that live output neve
 Pinned rows also live in a committed seed file, ``data/llm/pinned.jsonl``, because
 ``make reset-demo`` deletes the database. One JSON object per line::
 
-    {"prompt_id": "strategy_parse.v2", "facts": {...}, "output": "<raw model output>",
+    {"prompt_id": "strategy_parse.v3", "facts": {...}, "output": "<raw model output>",
      "provider": "groq#1", "note": "demo prompt 1, reviewed 2026-10-22"}
 
 ``provider`` and ``note`` are optional. ``load_pinned`` runs at startup and in reset-demo; it
