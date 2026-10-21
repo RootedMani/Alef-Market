@@ -13,7 +13,15 @@ exactly what the engine runs. Wording rules:
 
 from __future__ import annotations
 
-from app.contracts.strategy import Condition, Const, Group, IndicatorRef, PriceRef, Strategy
+from app.contracts.strategy import (
+    Condition,
+    Const,
+    Group,
+    IndicatorRef,
+    PositionSizing,
+    PriceRef,
+    Strategy,
+)
 
 PRICE_FA = {
     "open": "قیمت باز شدن",
@@ -91,3 +99,55 @@ def strategy_to_persian(strategy: Strategy) -> str:
     """e.g. «فهمیدم: ورود وقتی RSI(14) کمتر از 30 باشد و … خروج: حد ضرر 1%. …»."""
     entry = rule_to_persian(strategy.entry)
     return f"فهمیدم: ورود وقتی {entry}. {_exits(strategy)}. {_sizing(strategy)}."
+
+
+# ---------- what an edit changed (``ParseResult.changes_fa``) ----------
+
+
+def _size(sizing: PositionSizing) -> str:
+    pct = format_number(sizing.value_pct)
+    if sizing.mode == "risk_pct":
+        return f"ریسک {pct}% سرمایه در هر معامله"
+    return f"{pct}% سرمایه"
+
+
+def _changed(label: str, old: str | None, new: str | None) -> list[str]:
+    """One sentence for a field: added, removed or changed (nothing if equal)."""
+    if old == new:
+        return []
+    if old is None:
+        return [f"{label} {new} اضافه شد"]
+    if new is None:
+        return [f"{label} حذف شد"]
+    return [f"{label} از {old} به {new} تغییر کرد"]
+
+
+def _pct(value: float | None) -> str | None:
+    return None if value is None else f"{format_number(value)}%"
+
+
+def _bars(value: int | None) -> str | None:
+    return None if value is None else f"{value} کندل"
+
+
+def _rule(rule: Condition | Group | None) -> str | None:
+    return None if rule is None else f"«{rule_to_persian(rule)}»"
+
+
+def strategy_changes_fa(old: Strategy, new: Strategy) -> list[str]:
+    """Each difference between two strategies as one Persian sentence; [] when they're equal.
+
+    Words only, no ``<``/``>`` or arrows (B12), e.g. «حد ضرر از 2% به 3% تغییر کرد».
+    """
+    o, n = old.exits, new.exits
+    changes = _changed("شرط ورود", _rule(old.entry), _rule(new.entry))
+    changes += _changed("حد ضرر", _pct(o.stop_loss_pct), _pct(n.stop_loss_pct))
+    changes += _changed("حد سود", _pct(o.take_profit_pct), _pct(n.take_profit_pct))
+    if o.time_exit_bars is None and n.time_exit_bars is not None:
+        changes.append(f"خروج بعد از {n.time_exit_bars} کندل اضافه شد")
+    else:
+        changes += _changed("خروج زمانی", _bars(o.time_exit_bars), _bars(n.time_exit_bars))
+    changes += _changed("شرط خروج", _rule(o.exit_rule), _rule(n.exit_rule))
+    if old.sizing != new.sizing:
+        changes.append(f"اندازهٔ پوزیشن از {_size(old.sizing)} به {_size(new.sizing)} تغییر کرد")
+    return changes

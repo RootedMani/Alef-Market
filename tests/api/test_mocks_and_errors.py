@@ -32,7 +32,7 @@ BUILT_CHAT5 = {
 # Chat 6: the backtester (tests/api/test_backtest_api.py)
 BUILT_CHAT6 = {"/api/backtest/run"}
 # LLM step 4 (tests/api/test_strategy_api.py)
-BUILT_LLM = {"/api/backtest/parse"}
+BUILT_LLM = {"/api/backtest/parse", "/api/backtest/edit"}
 
 CASES: list[tuple[str, str, dict | None, dict | None, object]] = [
     ("GET", "/api/auth/me", None, None, UserPublic),

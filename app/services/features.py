@@ -32,8 +32,8 @@ def parse_strategy(gateway: LLMGateway, req: ParseRequest) -> ParseResult:
     return strategy.parse_strategy(gateway, req)
 
 
-def edit_strategy(db: Session, settings: Settings, req: EditRequest) -> ParseResult:
-    raise NotImplementedError("Week 2")
+def edit_strategy(gateway: LLMGateway, req: EditRequest) -> ParseResult:
+    return strategy.edit_strategy(gateway, req)
 
 
 def run_backtest(

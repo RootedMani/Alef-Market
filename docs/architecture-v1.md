@@ -160,8 +160,10 @@ StrategyParseOutput(status: ok|unsupported|unclear, strategy: Strategy|None, uns
                      # strategy present  <=>  status == "ok"
 ParseRequest(text)            EditRequest(strategy, text)
 ParseResult(status: ok|unsupported|unclear|offline, strategy?, readback_fa?, message_fa?,
-            unsupported, detected_lang?, meta?)
+            unsupported, changes_fa, detected_lang?, meta?)
 ```
+
+`changes_fa` (`/edit` only) is one Persian sentence per difference between the old and new strategy, written **by code** (`backtest/readback.strategy_changes_fa`), e.g. «حد ضرر از 2% به 3% تغییر کرد»; an edit that changes nothing is refused (`unclear`). `message_fa` and `detected_lang` are also decided by code: the LLM returns only `StrategyParseOutput`.
 
 `readback_fa` ("I understood: …") is generated **by code** from the validated strategy (`backtest/readback.py`), never by the LLM, so the user reads exactly what will run.
 

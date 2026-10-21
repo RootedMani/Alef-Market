@@ -191,5 +191,9 @@ class ParseResult(Contract):
     )
     message_fa: str | None = Field(default=None, description="Shown when status is not ok")
     unsupported: list[str] = Field(default_factory=list)
+    changes_fa: list[str] = Field(
+        default_factory=list,
+        description="/edit only: one Persian sentence per change, written by CODE from the diff",
+    )
     detected_lang: Lang | None = None
     meta: TextMeta | None = None

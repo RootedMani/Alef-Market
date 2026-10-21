@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from app.backtest.readback import format_number, strategy_to_persian
+from app.backtest.readback import format_number, strategy_changes_fa, strategy_to_persian
 from app.contracts.strategy import PositionSizing, Strategy
 from tests.backtest_kit import cond, const, group, ind, price, strategy
 
@@ -143,3 +143,44 @@ def test_the_readback_says_entry_and_exit_never_buy_or_sell_imperatives(s: Strat
     assert text.startswith("فهمیدم: ورود وقتی") and "خروج" in text
     assert not re.search(r"(?<!\w)(بخر|بفروش)(?!\w)", text)
     assert "<" not in text and ">" not in text
+
+
+# ---------- what an edit changed (ParseResult.changes_fa) ----------
+
+BASE = strategy(RSI_LT_30, stop=2, target=4)
+
+
+@pytest.mark.parametrize(
+    ("new", "expected"),
+    [
+        (strategy(RSI_LT_30, stop=3, target=4), ["حد ضرر از 2% به 3% تغییر کرد"]),
+        (strategy(RSI_LT_30, target=4), ["حد ضرر حذف شد"]),
+        (strategy(RSI_LT_30, stop=2, target=4, time_bars=12), ["خروج بعد از 12 کندل اضافه شد"]),
+        (
+            strategy(RSI_LT_30, stop=1.5, target=6),
+            ["حد ضرر از 2% به 1.5% تغییر کرد", "حد سود از 4% به 6% تغییر کرد"],
+        ),
+        (
+            strategy(group("and", RSI_LT_30, CLOSE_GT_EMA200), stop=2, target=4),
+            [
+                "شرط ورود از «RSI(14) کمتر از 30 باشد» به «RSI(14) کمتر از 30 باشد و "
+                "قیمت بسته‌شدن بیشتر از EMA(200) باشد» تغییر کرد"
+            ],
+        ),
+        (
+            strategy(RSI_LT_30, stop=2, target=4, exit_rule=cond(ind("rsi"), ">", const(70))),
+            ["شرط خروج «RSI(14) بیشتر از 70 باشد» اضافه شد"],
+        ),
+        (
+            strategy(
+                RSI_LT_30, stop=2, target=4, sizing=PositionSizing(mode="risk_pct", value_pct=1)
+            ),
+            ["اندازهٔ پوزیشن از 100% سرمایه به ریسک 1% سرمایه در هر معامله تغییر کرد"],
+        ),
+        (BASE, []),
+    ],
+)
+def test_strategy_changes_in_words(new: Strategy, expected: list[str]) -> None:
+    changes = strategy_changes_fa(BASE, new)
+    assert changes == expected
+    assert not any(c in "".join(changes) for c in "<>→←")  # words only (B12)

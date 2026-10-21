@@ -10,6 +10,7 @@ from __future__ import annotations
 import random
 from datetime import UTC, datetime
 
+from app.backtest.readback import strategy_changes_fa, strategy_to_persian
 from app.contracts.analysis import (
     ChartAnnotations,
     LevelZone,
@@ -251,6 +252,20 @@ def parse_result() -> ParseResult:
         readback_fa="ورود: وقتی RSI(14) < 30 و close > EMA(200) · حد ضرر 1% · حد سود 2%",
         detected_lang="fa",
         meta=TextMeta(source="cache", prompt="strategy_parse.v1", provider="groq#1"),
+    )
+
+
+def edit_result() -> ParseResult:
+    """«حد ضرر رو 2 درصد کن» applied to the parse mock: readback and changes from code."""
+    old = _strategy()
+    new = old.model_copy(update={"exits": old.exits.model_copy(update={"stop_loss_pct": 2.0})})
+    return ParseResult(
+        status="ok",
+        strategy=new,
+        readback_fa=strategy_to_persian(new),
+        changes_fa=strategy_changes_fa(old, new),
+        detected_lang="fa",
+        meta=TextMeta(source="cache", prompt="strategy_edit.v3", provider="groq#1"),
     )
 
 

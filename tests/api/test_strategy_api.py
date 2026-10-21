@@ -218,3 +218,79 @@ def test_demo_prompts_are_three_persian_drafts_and_the_first_has_a_stop() -> Non
     assert [c["text"] for c in sorted(EVALS.values(), key=lambda c: c.get("demo", 9))][:3] == list(
         DEMO_PROMPTS
     )
+
+
+# ---------- edit ----------
+
+OLD = Strategy.model_validate(EVALS["fa-01"]["strategy"])  # demo prompt 1: stop 2, target 4
+
+
+def with_exits(**exits: Any) -> dict[str, Any]:
+    data = OLD.model_dump(mode="json")
+    data["exits"] = {**data["exits"], **exits}
+    return data
+
+
+def edit(client: TestClient, text: str, old: Strategy = OLD) -> ParseResult:
+    body = {"strategy": old.model_dump(mode="json"), "text": text}
+    res = client.post("/api/backtest/edit", json=body)
+    assert res.status_code == 200, res.text
+    return ParseResult.model_validate(res.json())
+
+
+def test_the_edit_demo_changes_the_stop_and_says_so(client: TestClient) -> None:
+    p = use(client, answer(with_exits(stop_loss_pct=3.0)))
+    out = edit(client, "حد ضرر رو ۳ درصد کن")
+    assert out.status == "ok" and out.strategy is not None
+    assert out.strategy.exits.stop_loss_pct == 3.0
+    assert out.changes_fa == ["حد ضرر از 2% به 3% تغییر کرد"]
+    assert out.readback_fa == strategy_to_persian(out.strategy)
+    assert out.detected_lang == "fa" and out.meta is not None
+    assert out.meta.prompt == "strategy_edit.v3"
+    sent = json.loads(p.calls[0][1].removeprefix("<facts>\n").removesuffix("\n</facts>"))
+    assert sent == {"strategy": OLD.model_dump(mode="json"), "instruction": "حد ضرر رو 3 درصد کن"}
+
+
+def test_an_edit_that_changes_nothing_is_refused(client: TestClient) -> None:
+    use(client, answer(OLD.model_dump(mode="json")))
+    out = edit(client, "make it better")
+    assert out.status == "unclear" and out.strategy is None and out.changes_fa == []
+    assert out.message_fa is not None and "تغییر" in out.message_fa
+
+
+def test_an_edit_number_not_in_the_instruction_is_refused(client: TestClient) -> None:
+    guessed = answer(with_exits(stop_loss_pct=4.0))
+    use(client, guessed, guessed)
+    assert edit(client, "make the stop tighter").status == "unclear"
+
+
+def test_an_edit_may_not_add_an_indicator_it_does_not_name(client: TestClient) -> None:
+    atr = {"kind": "cond", "left": {"kind": "indicator", "name": "atr"}, "op": ">"}
+    rule = {**atr, "right": {"kind": "const", "value": 300}}
+    added = answer(with_exits(exit_rule=rule))
+    use(client, added, added)
+    assert edit(client, "also exit when volatility is above 300").status == "unclear"
+
+
+def test_an_unsupported_edit(client: TestClient) -> None:
+    use(client, answer(None, "unsupported", ["short"]))
+    out = edit(client, "make it a short")
+    assert out.status == "unsupported" and out.unsupported == ["short"]
+
+
+def test_an_edit_with_a_bare_moving_average_asks_which_one(client: TestClient) -> None:
+    p = use(client, answer(None, "unclear"))
+    out = edit(client, "also require price above the 100 moving average")
+    assert out.status == "unclear" and out.message_fa and "SMA" in out.message_fa
+    assert p.calls == []
+
+
+def test_an_edit_offline(client: TestClient) -> None:
+    assert_offline(edit(client, "حد ضرر رو ۳ درصد کن"))
+
+
+def test_the_mock_edit_says_what_changed(mock_client: TestClient) -> None:
+    body = {"strategy": OLD.model_dump(mode="json"), "text": "حد ضرر رو 2 درصد کن"}
+    out = ParseResult.model_validate(mock_client.post("/api/backtest/edit", json=body).json())
+    assert out.status == "ok" and out.changes_fa == ["حد ضرر از 1% به 2% تغییر کرد"]
+    assert out.strategy is not None and out.readback_fa == strategy_to_persian(out.strategy)

@@ -13,15 +13,16 @@ answer was refused, otherwise "offline" (no keys, a cache-only miss, every provi
 
 from __future__ import annotations
 
-from app.backtest.readback import strategy_to_persian
+from app.backtest.readback import strategy_changes_fa, strategy_to_persian
 from app.contracts.common import Lang
-from app.contracts.strategy import ParseRequest, ParseResult, StrategyParseOutput
+from app.contracts.strategy import EditRequest, ParseRequest, ParseResult, StrategyParseOutput
 from app.llm.demo_prompts import DEMO_PROMPTS
 from app.llm.gateway import LLMGateway, LLMOutcome
 from app.llm.normalize import detect_lang, normalize_text
 from app.llm.strategy_checks import bare_moving_average
 from app.llm.tasks import TASKS
 from app.llm.templates import (
+    STRATEGY_NO_CHANGE_FA,
     STRATEGY_WHICH_MA_FA,
     strategy_offline_fa,
     strategy_unclear_fa,
@@ -41,6 +42,29 @@ def parse_strategy(gateway: LLMGateway, req: ParseRequest) -> ParseResult:
         return ParseResult(status="unclear", message_fa=STRATEGY_WHICH_MA_FA, detected_lang=lang)
     outcome = gateway.run_json(TASKS["strategy_parse"], {"text": text}, fallback=_placeholder)
     return _result(outcome, lang)
+
+
+def edit_strategy(gateway: LLMGateway, req: EditRequest) -> ParseResult:
+    """The LLM returns the complete new strategy; code computes and describes the diff.
+
+    An edit that changes nothing is refused; the gateway's check already refused numbers and
+    indicators the instruction doesn't contain.
+    """
+    instruction = normalize_text(req.text)
+    lang = detect_lang(instruction)
+    if bare_moving_average(instruction):
+        return ParseResult(status="unclear", message_fa=STRATEGY_WHICH_MA_FA, detected_lang=lang)
+    facts = {"strategy": req.strategy.model_dump(mode="json"), "instruction": instruction}
+    outcome = gateway.run_json(TASKS["strategy_edit"], facts, fallback=_placeholder)
+    result = _result(outcome, lang)
+    if result.strategy is None:
+        return result
+    changes = strategy_changes_fa(req.strategy, result.strategy)
+    if result.strategy == req.strategy or not changes:
+        return ParseResult(
+            status="unclear", message_fa=STRATEGY_NO_CHANGE_FA, detected_lang=lang, meta=result.meta
+        )
+    return result.model_copy(update={"changes_fa": changes})
 
 
 def _result(outcome: LLMOutcome[StrategyParseOutput], lang: Lang) -> ParseResult:

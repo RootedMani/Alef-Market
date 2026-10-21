@@ -24,10 +24,13 @@ def parse(
 
 
 @router.post("/edit", response_model=ParseResult)
-def edit(req: EditRequest, settings: SettingsDep, db: DbDep, _user: UserDep) -> ParseResult:
+def edit(
+    req: EditRequest, settings: SettingsDep, gateway: GatewayDep, _user: UserDep
+) -> ParseResult:
+    """A follow-up like «حد ضرر رو 3 درصد کن»: the new strategy plus ``changes_fa``."""
     if settings.mock_api:
-        return mocks.parse_result()
-    return features.edit_strategy(db, settings, req)
+        return mocks.edit_result()
+    return features.edit_strategy(gateway, req)
 
 
 @router.post("/run", response_model=BacktestResult)
