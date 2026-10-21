@@ -25,11 +25,15 @@
     </form>
 
     <details class="mode">
-      <summary class="segmented" aria-label="حالت داده">
-        {% for m in modes %}
-        <span class="seg{% if m.on %} is-on{% endif %}" data-mode="{{ m.key }}"
-              {% if m.on %}aria-current="true"{% else %}aria-disabled="true"{% endif %}>{{ m.label }}</span>
-        {% endfor %}
+      <summary class="mode-summary" aria-label="حالت داده">
+        <span class="segmented">
+          {% for m in modes %}
+          <span class="seg{% if m.on %} is-on{% endif %}" data-mode="{{ m.key }}"
+                {% if m.on %}aria-current="true"{% else %}aria-disabled="true"{% endif %}>{{ m.label }}</span>
+          {% endfor %}
+        </span>
+        {# under the greyed segment: first in the row = right side (RTL), second = left #}
+        <small class="mode-note{% if modes[0].on %} at-end{% endif %}">{{ mode_restart_fa }}</small>
       </summary>
       <div class="mode-panel">
         {% for m in modes %}

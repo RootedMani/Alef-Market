@@ -77,7 +77,7 @@ MODE_HELP_FA = {
     "replay": "یک روز واقعی و ضبط‌شدهٔ بازار دوباره پخش می‌شود.",
     "live": "قیمت لحظه‌ای از صرافی خوانده می‌شود.",
 }
-MODE_RESTART_FA = "نیاز به راه‌اندازی دوبارهٔ سرور"
+MODE_RESTART_FA = "نیازمند راه\u200cاندازی مجدد"  # shown under the greyed segment
 
 
 def pick_symbol(settings: Settings, symbol: str | None) -> str:
