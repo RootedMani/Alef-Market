@@ -63,11 +63,13 @@ select, button, input, textarea { font: inherit; color: inherit; }
 
 .topbar {
   display: flex;
+  flex-wrap: wrap; /* the sample-data badge must not push the page wider than a phone */
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 1rem;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
+  position: relative; /* the mode panel opens under the header, inside the screen */
 }
 
 .brand {
@@ -100,7 +102,6 @@ select, button, input, textarea { font: inherit; color: inherit; }
 }
 
 /* mode toggle: shows the server's mode; opening it explains the other one needs a restart */
-.mode { position: relative; }
 
 .segmented {
   display: flex;
@@ -119,10 +120,10 @@ select, button, input, textarea { font: inherit; color: inherit; }
 
 .mode-panel {
   position: absolute;
-  inset-inline-end: 0;
-  top: calc(100% + 0.4rem);
+  inset-inline-end: 1rem;
+  top: calc(100% + 0.25rem);
   z-index: 20;
-  width: min(18rem, calc(100vw - 2rem));
+  width: min(18rem, calc(100% - 2rem));
   padding: 0.75rem;
   background: var(--surface);
   border: 1px solid var(--border);
