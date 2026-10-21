@@ -96,15 +96,14 @@ def summarize(metrics: BacktestMetrics, gateway: LLMGateway | None) -> Narrative
     return Narrative(text_fa=out.value, meta=out.meta)
 
 
-def run_backtest(
+def compute_backtest(
     db: Session,
     settings: Settings,
     req: BacktestRequest,
     *,
-    user_id: int,
     gateway: LLMGateway | None = None,
 ) -> BacktestResult:
-    """Run a validated strategy over stored/live candles and save it to ``backtest_runs``."""
+    """The result with its summary, saving nothing (scripts use this; the API also saves)."""
     start, end = resolve_range(db, settings, req)
     step = TIMEFRAME_MS[req.timeframe]
     warmup = strategy_warmup(req.strategy)
@@ -123,15 +122,26 @@ def run_backtest(
 
     tested = result.equity
     resolved = req.model_copy(update={"start_ts": tested[0].ts, "end_ts": tested[-1].ts + step})
-    # Before the run's own flush: after it the request session holds SQLite's write lock and
-    # the gateway's cache write would give up (200 ms), so the summary would never be cached.
     summary = summarize(result.metrics, gateway)
-    result = result.model_copy(update={"request": resolved, "summary": summary})
+    return result.model_copy(update={"request": resolved, "summary": summary})
 
+
+def run_backtest(
+    db: Session,
+    settings: Settings,
+    req: BacktestRequest,
+    *,
+    user_id: int,
+    gateway: LLMGateway | None = None,
+) -> BacktestResult:
+    """Run a validated strategy over stored/live candles and save it to ``backtest_runs``."""
+    # The summary is made inside compute_backtest, before this flush: after it the request
+    # session holds SQLite's write lock and the gateway's cache write would give up (200 ms).
+    result = compute_backtest(db, settings, req, gateway=gateway)
     row = BacktestRunRow(
         user_id=user_id,
         text=strategy_to_persian(req.strategy),
-        request_json=resolved.model_dump_json(),
+        request_json=result.request.model_dump_json(),
         metrics_json=result.metrics.model_dump_json(),
         created_ts=market.now_ms(),
     )
