@@ -18,7 +18,7 @@ def test_home_page_renders_rtl_persian(client: TestClient) -> None:
     assert res.status_code == 200
     assert 'dir="rtl"' in res.text
     assert 'dir="ltr"' in res.text  # the chart container
-    assert "توصیهٔ مالی" in res.text  # the permanent disclaimer
+    assert "توصیه مالی نیست" in res.text  # the permanent disclaimer
 
 
 def test_vendored_assets_are_served_locally(client: TestClient) -> None:

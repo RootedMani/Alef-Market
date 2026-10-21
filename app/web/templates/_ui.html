@@ -1,0 +1,10 @@
+{# Small shared pieces. A placeholder is the calm card shown where a feature isn't built yet. #}
+{% macro placeholder(title, text=None) %}
+<div class="placeholder" role="status" dir="rtl">
+  <span class="placeholder-icon" aria-hidden="true"></span>
+  <div>
+    <p class="placeholder-title">{{ title }}</p>
+    {% if text %}<p class="muted">{{ text }}</p>{% endif %}
+  </div>
+</div>
+{% endmacro %}

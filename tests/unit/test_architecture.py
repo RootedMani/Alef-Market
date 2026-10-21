@@ -60,3 +60,27 @@ def test_core_has_no_io_imports() -> None:
         if name.startswith(FORBIDDEN_PREFIXES)
     ]
     assert not violations, "\n".join(violations)
+
+
+# The web pages call services (same as /api), never the pure core directly.
+WEB_FORBIDDEN = (
+    "app.analysis",
+    "app.backtest",
+    "app.journal",
+    "app.briefing",
+    "app.news.lookup",
+    "app.data",
+    "app.db",
+)
+
+
+def test_web_calls_services_not_the_core() -> None:
+    files = sorted((APP / "web").rglob("*.py"))
+    assert files, "no web files found"
+    violations = [
+        f"{f.relative_to(APP)} imports {name}"
+        for f in files
+        for name in _imports(f)
+        if name.startswith(WEB_FORBIDDEN)
+    ]
+    assert not violations, "\n".join(violations)

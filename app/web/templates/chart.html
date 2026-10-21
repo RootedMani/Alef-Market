@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% from "_ui.html" import placeholder %}
+
+{% block title_extra %} <bdi class="ticker" dir="ltr">{{ symbol }}</bdi>{% endblock %}
+
+{% block content %}
+<section class="card">
+  {# The chart stays LTR inside the RTL page (Brief risk #7). #}
+  <div id="chart" class="chart" dir="ltr" data-symbol="{{ symbol }}" data-timeframe="1m">
+    {{ placeholder("نمودار در قدم بعد اضافه می‌شود",
+                   "یک روز واقعی بازار با سرعت دلخواه دوباره پخش می‌شود و حجم معاملات و میانگین متحرک کنار قیمت دیده می‌شود.") }}
+  </div>
+</section>
+{% endblock %}

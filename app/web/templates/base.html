@@ -2,27 +2,66 @@
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}الف مارکت{% endblock %}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>{{ page.title_fa }} · الف مارکت</title>
   <link rel="stylesheet" href="{{ url_for('static', path='css/app.css') }}">
   <script src="{{ url_for('static', path='vendor/htmx-2.0.11.min.js') }}" defer></script>
   {% block head %}{% endblock %}
 </head>
-<body>
+<body data-page="{{ page.key }}" data-market-mode="{{ mode }}">
   <header class="topbar">
-    <strong class="brand">الف مارکت</strong>
-    <span class="badge" id="mode-badge">{{ 'بازپخش' if mode == 'replay' else 'زنده' }}</span>
-    {% if mock_api %}<span class="badge badge-warn">دادهٔ نمونه</span>{% endif %}
+    <a class="brand" href="/">الف مارکت</a>
+    {% if sample_data %}<span class="badge badge-warn">دادهٔ نمونه</span>{% endif %}
+
+    <form class="pair" method="get" action="{{ page.path }}">
+      <label class="sr-only" for="pair-select">جفت‌ارز</label>
+      <select id="pair-select" name="symbol" dir="ltr" onchange="this.form.submit()">
+        {% for s in symbols %}
+        <option value="{{ s }}"{% if s == symbol %} selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+      <noscript><button type="submit">نمایش</button></noscript>
+    </form>
+
+    <details class="mode">
+      <summary class="segmented" aria-label="حالت داده">
+        {% for m in modes %}
+        <span class="seg{% if m.on %} is-on{% endif %}" data-mode="{{ m.key }}"
+              {% if m.on %}aria-current="true"{% else %}aria-disabled="true"{% endif %}>{{ m.label }}</span>
+        {% endfor %}
+      </summary>
+      <div class="mode-panel">
+        {% for m in modes %}
+        <div class="mode-row{% if m.on %} is-on{% endif %}">
+          <strong>{{ m.label }}</strong>
+          {% if m.on %}<span class="tag tag-on">فعال</span>{% else %}<span class="tag">{{ mode_restart_fa }}</span>{% endif %}
+          <p class="muted">{{ m.help }}</p>
+        </div>
+        {% endfor %}
+        <p class="muted small">نسخهٔ <bdi>{{ version }}</bdi></p>
+      </div>
+    </details>
   </header>
 
+  <nav class="tabs" aria-label="بخش‌ها">
+    {% for p, href in nav %}
+    <a href="{{ href }}"{% if p.key == page.key %} aria-current="page"{% endif %}>
+      <span class="tab-step">{{ p.step_fa }}</span>
+      <span class="tab-label">{{ p.label_fa }}</span>
+    </a>
+    {% endfor %}
+  </nav>
+
   <main class="container">
+    <div class="page-head">
+      <h1>{{ page.title_fa }}{% block title_extra %}{% endblock %}</h1>
+      <p class="lead">{{ page.lead_fa }}</p>
+    </div>
     {% block content %}{% endblock %}
   </main>
 
-  <footer class="disclaimer">
-    این ابزار فقط برای پشتیبانی از تصمیم است و توصیهٔ مالی یا پیشنهاد خرید و فروش نیست.
-    <span class="version">v{{ version }}</span>
-  </footer>
+  <footer class="disclaimer" role="note">{{ disclaimer }}</footer>
   {% block scripts %}{% endblock %}
 </body>
 </html>
