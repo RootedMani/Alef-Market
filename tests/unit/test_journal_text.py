@@ -10,6 +10,8 @@ from __future__ import annotations
 import pytest
 
 from app.contracts.journal import Evidence, InsightFacts, TradeReviewFacts
+from app.journal.insights import TITLES_FA
+from app.llm.prose_checks import cause_feeling_problems
 from app.llm.tasks import TASKS
 from app.llm.templates import insight_template, trade_review_template
 from app.llm.validate import extract_numbers, prose_problems
@@ -98,3 +100,21 @@ def test_trade_review_states_r_and_the_pattern() -> None:
     text = trade_review_template(_review())
     assert "-1.12R" in text and "8 دقیقه" in text and "معاملهٔ انتقامی" in text
     assert 68250.5 in extract_numbers(text)
+
+
+@pytest.mark.parametrize("key", list(PARAMS))
+def test_insight_templates_state_no_cause_or_feeling(key: str) -> None:
+    facts = InsightFacts(key=key, params=PARAMS[key], **BASE)  # type: ignore[arg-type]
+    text = insight_template(facts)
+    named = {**facts.model_dump(mode="json"), "title_fa": TITLES_FA[facts.key]}
+    assert cause_feeling_problems(text, text, named) == [], text
+
+
+@pytest.mark.parametrize(
+    "matched", [["revenge_trade"], [], ["bad_hour", "overtrading"], ["no_stop", "after_losses"]]
+)
+def test_the_trade_review_template_states_no_cause_or_feeling(matched: list[str]) -> None:
+    facts = _review(matched=matched)
+    text = trade_review_template(facts)
+    named = {**facts.model_dump(mode="json"), "matched_fa": [TITLES_FA[k] for k in matched]}
+    assert cause_feeling_problems(text, text, named) == [], text

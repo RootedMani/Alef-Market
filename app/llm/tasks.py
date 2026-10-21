@@ -24,6 +24,7 @@ from pydantic import BaseModel
 
 from app.contracts.briefing import BriefingProse
 from app.contracts.strategy import StrategyParseOutput
+from app.llm.prose_checks import cause_feeling_problems
 from app.llm.strategy_checks import edit_problems, parse_problems
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -55,7 +56,7 @@ class PromptTask:
     deadline_s: float = 5.0  # the whole ladder for one call
     max_tokens: int = 800
     retry_hint: str = ""  # appended to the problem list on the one retry
-    # JSON tasks: (raw JSON, validated model, facts) -> problems; non-empty = invalid output
+    # (raw JSON or text, validated value, facts) -> problems; non-empty = invalid output
     check: Callable[[Any, BaseModel, Any], list[str]] | None = None
 
     @property
@@ -112,30 +113,33 @@ TASKS: dict[str, PromptTask] = {
         ),
         PromptTask(
             "backtest_summary",
-            2,
+            3,
             "text",
             max_chars=500,
-            deadline_s=3,
+            deadline_s=2,  # inline in POST /backtest/run: the user is waiting
             max_tokens=500,
             retry_hint=RETRY_HINT_TEXT,
+            check=cause_feeling_problems,
         ),
         PromptTask(
             "insight",
-            2,
+            3,
             "text",
             max_chars=300,
             deadline_s=3,
             max_tokens=400,
             retry_hint=RETRY_HINT_TEXT,
+            check=cause_feeling_problems,
         ),
         PromptTask(
             "trade_review",
-            2,
+            3,
             "text",
             max_chars=500,
             deadline_s=3,
             max_tokens=600,
             retry_hint=RETRY_HINT_TEXT,
+            check=cause_feeling_problems,
         ),
     )
 }

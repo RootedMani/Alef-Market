@@ -3,7 +3,8 @@
 - JSON tasks: strip code fences, parse, validate with the task's Pydantic model, then the
   task's own ``check`` on the raw JSON (parse/edit: ``strategy_checks``, "never a guess").
 - Prose tasks: Persian text, Latin digits only, no buy/sell advice, and **every number in the
-  text must appear in the facts** (hard rule 1: the LLM never computes numbers).
+  text must appear in the facts** (hard rule 1: the LLM never computes numbers); then the
+  task's ``check`` (journal and backtest prose: ``prose_checks``, no causes or feelings).
 
 A failed check counts like an invalid output: the gateway retries once with the problem list,
 then falls back (other provider -> cache -> template).
@@ -192,6 +193,8 @@ def validate_output(task: PromptTask, raw: str, facts: Any) -> BaseModel | str:
             raise OutputInvalid(problems)
         return value
     problems = prose_problems(raw, facts, max_chars=task.max_chars)
+    if task.check is not None:
+        problems += task.check(raw.strip(), raw.strip(), facts)
     if problems:
         raise OutputInvalid(problems)
     return raw.strip()

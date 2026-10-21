@@ -410,8 +410,9 @@ def test_the_retry_respects_the_deadline(factory: Any, clock: FakeClock) -> None
 
 def test_short_deadline_tasks() -> None:
     assert TASKS["strategy_parse"].deadline_s == TASKS["strategy_edit"].deadline_s == 15
-    for name in ("insight", "trade_review", "backtest_summary"):
+    for name in ("insight", "trade_review"):
         assert TASKS[name].deadline_s == 3
+    assert TASKS["backtest_summary"].deadline_s == 2  # inline in POST /backtest/run
     for name in ("why", "briefing"):
         assert 3 <= TASKS[name].deadline_s <= 5
     assert all(t.max_tokens > 0 for t in TASKS.values())

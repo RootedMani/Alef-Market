@@ -31,9 +31,9 @@ PROMPT_HASHES = {
     "strategy_edit.v4": "100a3ff01bda3c9a",
     "why.v2": "7dada32cf406ce8b",
     "briefing.v2": "fe671168fdc24ca4",
-    "backtest_summary.v2": "0753d9fea9ab6aa4",
-    "insight.v2": "b8bc29aa159b9a28",
-    "trade_review.v2": "b56ddd90fcad6b80",
+    "backtest_summary.v3": "4b5e74c4b4570434",
+    "insight.v3": "fbb55c5c53c22f70",
+    "trade_review.v3": "e8d96581d634af96",
 }
 
 
