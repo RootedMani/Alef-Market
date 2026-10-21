@@ -28,39 +28,58 @@ _STATUS_MESSAGES_FA: dict[int, tuple[str, str]] = {
 }
 
 
-def _error(status: int, detail: str | None = None, message_fa: str | None = None) -> JSONResponse:
+def api_error(status: int, detail: str | None = None, message_fa: str | None = None) -> ApiError:
     code, default_fa = _STATUS_MESSAGES_FA.get(status, ("server_error", "خطایی رخ داد."))
-    body = ApiError(code=code, message_fa=message_fa or default_fa, detail=detail)
+    return ApiError(code=code, message_fa=message_fa or default_fa, detail=detail)
+
+
+def api_error_for(exc: Exception) -> tuple[int, ApiError]:
+    """``(status, ApiError)`` for any exception: the JSON handlers and the HTML fragments
+    (which show ``message_fa`` in a calm card) map errors the same way."""
+    if isinstance(exc, StarletteHTTPException):
+        return exc.status_code, api_error(exc.status_code, str(exc.detail) if exc.detail else None)
+    if isinstance(exc, RequestValidationError):
+        problems = "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors())
+        return 422, api_error(422, problems)
+    for kind, status in ((InvalidRequest, 400), (NotFound, 404), (Conflict, 409)):
+        if isinstance(exc, kind):
+            return status, api_error(status, exc.detail, exc.message_fa)  # type: ignore[attr-defined]
+    if isinstance(exc, NotImplementedError):
+        return 501, api_error(501, str(exc) or None)
+    return 500, api_error(500)
+
+
+def _response(exc: Exception) -> JSONResponse:
+    status, body = api_error_for(exc)
     return JSONResponse(status_code=status, content=body.model_dump())
 
 
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(StarletteHTTPException)
     async def _http(_: Request, exc: StarletteHTTPException) -> JSONResponse:
-        return _error(exc.status_code, str(exc.detail) if exc.detail else None)
+        return _response(exc)
 
     @app.exception_handler(RequestValidationError)
     async def _validation(_: Request, exc: RequestValidationError) -> JSONResponse:
-        problems = "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors())
-        return _error(422, problems)
+        return _response(exc)
 
     @app.exception_handler(InvalidRequest)
     async def _invalid(_: Request, exc: InvalidRequest) -> JSONResponse:
-        return _error(400, exc.detail, exc.message_fa)
+        return _response(exc)
 
     @app.exception_handler(NotFound)
     async def _not_found(_: Request, exc: NotFound) -> JSONResponse:
-        return _error(404, exc.detail, exc.message_fa)
+        return _response(exc)
 
     @app.exception_handler(Conflict)
     async def _conflict(_: Request, exc: Conflict) -> JSONResponse:
-        return _error(409, exc.detail, exc.message_fa)
+        return _response(exc)
 
     @app.exception_handler(NotImplementedError)
     async def _not_implemented(_: Request, exc: NotImplementedError) -> JSONResponse:
-        return _error(501, str(exc) or None)
+        return _response(exc)
 
     @app.exception_handler(Exception)
     async def _unexpected(request: Request, exc: Exception) -> JSONResponse:
         logger.exception("unhandled error on %s %s", request.method, request.url.path)
-        return _error(500)
+        return _response(exc)
