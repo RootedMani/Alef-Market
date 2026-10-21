@@ -1,0 +1,43 @@
+{# ChartAnnotations as Persian cards (the chart draws the same data from /api). `p` comes from
+   app.web.chart.annotations_panel. data-ready tells chart.js whether to keep refreshing. #}
+{% from "_ui.html" import placeholder, error_card %}
+{% if p.failure %}
+<div data-ready="false">
+  {% if p.failure.placeholder %}
+  {{ placeholder("نشانه‌گذاری نمودار به‌زودی آماده می‌شود",
+                 "سطح‌های حمایت و مقاومت، الگوهای شمعی و حرکت‌های غیرعادی اینجا و روی نمودار علامت می‌خورند.",
+                 key="annotations") }}
+  {% else %}
+  {{ error_card(p.failure.error.message_fa) }}
+  {% endif %}
+</div>
+{% else %}
+<div data-ready="true">
+  {% if not (p.levels or p.patterns or p.moves) %}
+  <p class="muted">تا این لحظه نشانهٔ خاصی دیده نشده است.</p>
+  {% endif %}
+  <ul class="rows">
+    {% for z in p.levels %}
+    <li class="row level-{{ z.kind }}">
+      <strong>{{ level_fa[z.kind] }}</strong>
+      <bdi dir="ltr">{{ z.low|price }} – {{ z.high|price }}</bdi>
+      <span class="muted">{{ z.touches }} برخورد</span>
+    </li>
+    {% endfor %}
+    {% for m in p.patterns %}
+    <li class="row">
+      <strong>{{ pattern_fa[m.kind] }}</strong>
+      <span class="muted">ساعت <bdi dir="ltr">{{ m.ts|clock(tz) }}</bdi></span>
+    </li>
+    {% endfor %}
+    {% for m in p.moves %}
+    <li class="row move-{{ m.direction }}">
+      <strong>حرکت <bdi dir="ltr">{{ m.move_pct|pct }}</bdi> {{ direction_fa[m.direction] }}</strong>
+      <span class="muted">حجم {{ "%.1f"|format(m.volume_multiple) }} برابر میانگین · ساعت <bdi dir="ltr">{{ m.ts|clock(tz) }}</bdi></span>
+      <button type="button" class="link" hx-target="#why-panel"
+              hx-get="/fragments/why?{{ {'symbol': p.symbol, 'tf': p.timeframe, 'ts': m.ts}|urlencode }}">چرا؟</button>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}

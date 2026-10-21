@@ -1,14 +1,130 @@
 {% extends "base.html" %}
 {% from "_ui.html" import placeholder %}
 
+{# The clock travels in the URL: every form that reloads the page carries it, and chart.js
+   rewrites these fields as the replay moves, so pair/timeframe/day switches keep it. #}
+{% macro clock_fields(state) %}
+{% if state.mode == "replay" %}
+<input type="hidden" name="as_of_ts" value="{{ state.as_of_ts }}" data-clock="as_of_ts">
+<input type="hidden" name="speed" value="{{ state.speed }}" data-clock="speed">
+<input type="hidden" name="playing" value="{{ 1 if state.playing else 0 }}" data-clock="playing">
+{% endif %}
+{% endmacro %}
+
 {% block title_extra %} <bdi class="ticker" dir="ltr">{{ symbol }}</bdi>{% endblock %}
 
+{% block pair_fields %}
+{% if state %}
+<input type="hidden" name="tf" value="{{ state.timeframe }}" data-clock="tf">
+{% if state.day and state.day.id %}<input type="hidden" name="day" value="{{ state.day.id }}" data-clock="day">{% endif %}
+{{ clock_fields(state) }}
+{% endif %}
+{% endblock %}
+
 {% block content %}
+{% if not state %}
 <section class="card">
-  {# The chart stays LTR inside the RTL page (Brief risk #7). #}
-  <div id="chart" class="chart" dir="ltr" data-symbol="{{ symbol }}" data-timeframe="1m">
-    {{ placeholder("نمودار در قدم بعد اضافه می‌شود",
-                   "یک روز واقعی بازار با سرعت دلخواه دوباره پخش می‌شود و حجم معاملات و میانگین متحرک کنار قیمت دیده می‌شود.") }}
-  </div>
+  {{ placeholder("هنوز روزی برای بازپخش ضبط نشده است",
+                 "داده‌های یک روز واقعی بازار باید ضبط شود (make persona یا data/replay_days.json).",
+                 key="no-day") }}
 </section>
+{% else %}
+<section class="card chart-card">
+  <form class="chart-controls" method="get" action="/chart">
+    <input type="hidden" name="symbol" value="{{ state.symbol }}">
+    <label>بازهٔ کندل
+      <select name="tf" dir="ltr" onchange="this.form.submit()">
+        {% for t in timeframes %}
+        <option value="{{ t }}"{% if t == state.timeframe %} selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% if days|length > 1 %}
+    <label>روز
+      <select id="day-select" name="day" onchange="this.form.submit()">
+        {% for d in days %}
+        <option value="{{ d.id }}"{% if d.id == state.day.id %} selected{% endif %}>{{ d.label_fa }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% elif state.day %}
+    <span class="muted">{{ state.day.label_fa }}</span>
+    {% endif %}
+    {% if state.day %}<bdi class="muted" dir="ltr">{{ state.start_ts|date(tz) }}</bdi>{% endif %}
+    {{ clock_fields(state) }}
+    <noscript><button type="submit">نمایش</button></noscript>
+  </form>
+
+  {% if state.mode == "replay" %}
+  <div class="replay" role="group" aria-label="کنترل بازپخش">
+    <button type="button" id="rp-play" class="btn btn-primary"
+            data-label-play="پخش" data-label-pause="توقف">{{ "توقف" if state.playing else "پخش" }}</button>
+    <span class="speeds" role="group" aria-label="سرعت پخش">
+      {% for s in speeds %}<button type="button" class="speed" data-speed="{{ s }}" aria-pressed="{{ 'true' if s == state.speed else 'false' }}"><bdi>{{ s }}x</bdi></button>{% endfor %}
+    </span>
+    {% if state.jump_ts %}
+    <button type="button" id="rp-jump" data-ts="{{ state.jump_ts }}" class="btn">رفتن به لحظهٔ معامله</button>
+    {% endif %}
+    <button type="button" id="rp-restart" class="btn">از اول</button>
+    <span class="clock">
+      <output id="rp-clock" dir="ltr">{{ state.as_of_ts|clock(tz) }}</output>
+      <span class="muted">به وقت تهران</span>
+    </span>
+  </div>
+  {% endif %}
+
+  <div id="chart-notice" hidden></div>
+  {# The chart stays LTR inside the RTL page (Brief risk #7). Times on it are Tehran time. #}
+  <div id="chart" class="chart" dir="ltr"
+       data-symbol="{{ state.symbol }}" data-timeframe="{{ state.timeframe }}" data-mode="{{ state.mode }}"
+       data-start-ts="{{ state.start_ts }}" data-end-ts="{{ state.end_ts if state.end_ts is not none else '' }}"
+       data-as-of-ts="{{ state.as_of_ts }}" data-initial-ts="{{ state.initial_ts }}" data-speed="{{ state.speed }}" data-playing="{{ 1 if state.playing else 0 }}"
+       {% if state.stage_ts %}data-stage-ts="{{ state.stage_ts }}" data-jump-ts="{{ state.jump_ts }}"{% endif %}
+       data-tz-offset-ms="{{ state.tz_offset_ms }}" data-ema-period="{{ ema_period }}"></div>
+  <p class="legend muted">
+    <span class="swatch swatch-ema"></span><bdi dir="ltr">EMA {{ ema_period }}</bdi>
+    <span class="swatch swatch-vol"></span>حجم معاملات
+  </p>
+
+  <template id="tpl-empty">
+    {{ placeholder("برای این بازه کندلی ثبت نشده است",
+                   "داده‌ای برای نمایش نیست. روز یا جفت‌ارز دیگری را امتحان کنید.") }}
+  </template>
+  <template id="tpl-stale">
+    <p class="notice">اتصال به صرافی برقرار نشد؛ آخرین داده‌های ذخیره‌شده نمایش داده می‌شود.</p>
+  </template>
+  <template id="tpl-error">
+    <div class="placeholder is-error" role="status" dir="rtl">
+      <span class="placeholder-icon" aria-hidden="true"></span>
+      <div><p class="placeholder-title" data-slot="message">نمودار بارگذاری نشد.</p></div>
+    </div>
+  </template>
+</section>
+
+<div class="panels">
+  <section class="card">
+    <h2>سطح‌ها و حرکت‌ها</h2>
+    <div id="annotations-panel">{% with p = panel %}{% include "_annotations.html" %}{% endwith %}</div>
+  </section>
+  <section class="card">
+    <h2>چرا قیمت حرکت کرد؟</h2>
+    <div id="why-panel">
+      {% if panel.failure and panel.failure.placeholder %}
+      {{ placeholder("توضیح حرکت‌ها به‌زودی آماده می‌شود",
+                     "با زدن روی یک حرکت بزرگ نمودار، دلیلش اینجا نوشته می‌شود: خبرها، همراهی بازار و سطح‌های شکسته.",
+                     key="why") }}
+      {% else %}
+      <p class="muted">روی یکی از حرکت‌های علامت‌خورده بزنید تا دلیلش اینجا نوشته شود.</p>
+      {% endif %}
+    </div>
+  </section>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if state %}
+<script src="{{ url_for('static', path='vendor/lightweight-charts-5.2.1.js') }}"></script>
+<script src="{{ url_for('static', path='js/chart.js') }}"></script>
+{% endif %}
 {% endblock %}

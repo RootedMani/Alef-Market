@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.llm.demo_prompts import DEMO_PROMPTS
+from app.llm.validate import ADVICE_PATTERNS
 from app.main import create_app
 from app.web import pages
 from tests.conftest import make_settings
@@ -18,7 +19,12 @@ PAGES = ("/briefing", "/chart", "/backtest", "/journal")
 DISCLAIMER = "این ابزار فقط پشتیبان تصمیم‌گیری است و توصیه مالی نیست"
 WEB_DIR = Path(pages.__file__).parent
 
-# Buy/sell wording: the app says «ورود»/«خروج» instead. Only text the user types is exempt.
+# Rendered pages: no buy/sell commands (the LLM validator's list), except text the user types.
+COMMANDS = re.compile(
+    "|".join(rf"(?<!\w){re.escape(p)}(?!\w)" for p in ADVICE_PATTERNS), re.IGNORECASE
+)
+# The app's own labels (app/web: Python, templates, JS, CSS) say «ورود»/«خروج»: no buy/sell
+# words at all. Backend texts: tests/unit/test_buy_sell_wording.py.
 FORBIDDEN_FA = ("بخر", "بفروش", "خرید", "فروش")
 FORBIDDEN_EN = re.compile(r"\b(buy|sell)", re.IGNORECASE)
 
@@ -32,6 +38,10 @@ def without_user_text(text: str) -> str:
 
 def buy_sell_words(text: str) -> list[str]:
     return [w for w in FORBIDDEN_FA if w in text] + FORBIDDEN_EN.findall(text)
+
+
+def buy_sell_commands(text: str) -> list[str]:
+    return COMMANDS.findall(text)
 
 
 @pytest.mark.parametrize("path", PAGES)
@@ -81,7 +91,10 @@ def test_mode_toggle_shows_the_server_mode(client: TestClient) -> None:
     page = client.get("/chart").text
     assert re.search(r'data-mode="replay"[^>]*aria-current="true"', page)
     assert re.search(r'data-mode="live"[^>]*aria-disabled="true"', page)
-    assert "نیاز به راه‌اندازی دوبارهٔ سرور" in page
+    # the caption sits right after the greyed segment, inside the toggle itself
+    caption = "نیازمند راه\u200cاندازی مجدد"
+    assert re.search(rf'aria-disabled="true">زنده</span>\s*</span>\s*<small[^>]*>{caption}<', page)
+    assert page.count(caption) == 2  # caption + the line in the opened panel
 
 
 def test_mode_toggle_in_live_mode(tmp_path: Path) -> None:
@@ -99,9 +112,9 @@ def test_sample_data_badge_only_when_mocks_are_on(client: TestClient, tmp_path: 
 
 
 @pytest.mark.parametrize("path", PAGES)
-def test_pages_have_no_buy_sell_wording(client: TestClient, path: str) -> None:
+def test_pages_have_no_buy_sell_commands(client: TestClient, path: str) -> None:
     page = without_user_text(client.get(path).text)
-    assert buy_sell_words(page) == []
+    assert buy_sell_commands(page) == []
 
 
 def test_web_sources_have_no_buy_sell_wording() -> None:
@@ -121,5 +134,7 @@ def test_web_sources_have_no_buy_sell_wording() -> None:
 
 
 def test_demo_prompts_are_the_only_exemption() -> None:
-    assert buy_sell_words(DEMO_PROMPTS[0])  # they do say «بخر»: the exemption is needed
-    assert buy_sell_words(without_user_text(f"<p>{DEMO_PROMPTS[0]}</p> بخر")) == ["بخر"]
+    assert buy_sell_commands(DEMO_PROMPTS[0])  # they do say «بخر»: the exemption is needed
+    page = without_user_text(f"<p>{DEMO_PROMPTS[0]}</p> الان بخر، buy now")
+    assert buy_sell_commands(page) == ["بخر", "buy now"]
+    assert buy_sell_commands("خرید و نگه\u200cداری") == []  # API text may name buy-and-hold

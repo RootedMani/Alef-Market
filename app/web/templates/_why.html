@@ -1,0 +1,35 @@
+{# WhyExplanation: the narrative first, then the facts it was written from. #}
+{% from "_ui.html" import placeholder, error_card %}
+{% if p.failure %}
+  {% if p.failure.placeholder %}
+  {{ placeholder("توضیح حرکت‌ها به‌زودی آماده می‌شود",
+                 "با زدن روی یک حرکت بزرگ نمودار، دلیلش اینجا نوشته می‌شود: خبرها، همراهی بازار و سطح‌های شکسته.",
+                 key="why") }}
+  {% else %}
+  {{ error_card(p.failure.error.message_fa) }}
+  {% endif %}
+{% else %}
+{% set f = p.why.facts %}
+<p class="narrative">{{ p.why.narrative.text_fa }}</p>
+<ul class="rows">
+  <li class="row"><span class="muted">تغییر قیمت</span> <bdi dir="ltr">{{ f.move_pct|pct }}</bdi></li>
+  <li class="row"><span class="muted">حجم معاملات</span> {{ "%.1f"|format(f.volume_multiple) }} برابر میانگین</li>
+  <li class="row"><span class="muted"><bdi dir="ltr">{{ f.other_symbol }}</bdi> در همین مدت</span>
+    <bdi dir="ltr">{{ f.other_move_pct|pct }}</bdi>{% if f.moved_together %} · همراه بازار{% endif %}</li>
+  {% if f.level_broken %}
+  <li class="row"><span class="muted">سطح شکسته</span>
+    {{ level_fa[f.level_broken.kind] }}
+    <bdi dir="ltr">{{ f.level_broken.low|price }} – {{ f.level_broken.high|price }}</bdi></li>
+  {% endif %}
+</ul>
+{% if f.headlines %}
+<ul class="headlines">
+  {% for h in f.headlines %}
+  <li><span dir="ltr" lang="en">{{ h.title }}</span>
+    <span class="muted">{{ h.source }} · <bdi dir="ltr">{{ h.published_ts|clock(tz) }}</bdi></span></li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">در این بازه خبری پیدا نشد.</p>
+{% endif %}
+{% endif %}

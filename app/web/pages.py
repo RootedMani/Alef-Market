@@ -13,10 +13,14 @@ from fastapi.templating import Jinja2Templates
 from app import __version__
 from app.api.deps import SettingsDep
 from app.settings import Settings
+from app.web import fmt
 
 WEB_DIR = Path(__file__).parent
 STATIC_DIR = WEB_DIR / "static"
 templates = Jinja2Templates(directory=WEB_DIR / "templates")
+templates.env.filters.update(
+    clock=fmt.fmt_clock, date=fmt.fmt_date, price=fmt.fmt_price, pct=fmt.fmt_pct
+)
 
 router = APIRouter(include_in_schema=False)
 
@@ -77,7 +81,7 @@ MODE_HELP_FA = {
     "replay": "یک روز واقعی و ضبط‌شدهٔ بازار دوباره پخش می‌شود.",
     "live": "قیمت لحظه‌ای از صرافی خوانده می‌شود.",
 }
-MODE_RESTART_FA = "نیاز به راه‌اندازی دوبارهٔ سرور"
+MODE_RESTART_FA = "نیازمند راه\u200cاندازی مجدد"  # shown under the greyed segment
 
 
 def pick_symbol(settings: Settings, symbol: str | None) -> str:
@@ -128,11 +132,6 @@ def briefing_page(
     request: Request, settings: SettingsDep, symbol: str | None = None
 ) -> HTMLResponse:
     return render_page(request, settings, "briefing", symbol)
-
-
-@router.get("/chart", response_class=HTMLResponse)
-def chart_page(request: Request, settings: SettingsDep, symbol: str | None = None) -> HTMLResponse:
-    return render_page(request, settings, "chart", symbol)
 
 
 @router.get("/backtest", response_class=HTMLResponse)
